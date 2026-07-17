@@ -4,8 +4,8 @@ import SwiftUI
 final class MapViewModel: ObservableObject {
   @Published var selectedSituation: Situation?
 
-  let chapters = Situation.chapters
-  let situations = Situation.demo
+  let chapters = AppContentRepository.shared.chapters
+  let situations = AppContentRepository.shared.situations
 
   func situations(in chapter: AdventureChapter) -> [Situation] {
     situations.filter { $0.chapter.hasPrefix("Chapter \(chapter.id)") }

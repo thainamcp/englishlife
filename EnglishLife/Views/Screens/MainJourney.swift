@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct MainTabView: View {
   @EnvironmentObject private var state: AppViewModel
@@ -6,7 +7,56 @@ struct MainTabView: View {
     TabView(selection: $state.selectedTab) {
       MapView().tabItem { Label("Map", systemImage: "map.fill") }.tag(0)
       CharactersListView().tabItem { Label("Characters", systemImage: "person.2.fill") }.tag(1)
+      UserProfileView().tabItem { Label("User", systemImage: "person.crop.circle.fill") }.tag(2)
     }.tint(ThemeApp.Colors.roadmapLine)
+  }
+}
+
+struct UserProfileView: View {
+  @EnvironmentObject private var state: AppViewModel
+
+  var body: some View {
+    ZStack {
+      AdventureBackground()
+      VStack(alignment: .leading, spacing: 22) {
+        SectionTitle("Your profile", subtitle: "Your English Life adventure")
+        GlassCard {
+          HStack(spacing: 16) {
+            ZStack {
+              Circle().fill(ThemeApp.Colors.roadmapLine)
+              Image(systemName: state.level.icon).font(.title.weight(.black)).foregroundStyle(
+                ThemeApp.Colors.textDark)
+            }.frame(width: 76, height: 76)
+            VStack(alignment: .leading, spacing: 5) {
+              Text(state.learnerName.isEmpty ? "Explorer" : state.learnerName).font(
+                ThemeApp.Fonts.gameTitle(size: 25))
+              Text(state.level.rawValue).font(ThemeApp.Fonts.bodyText(size: 15)).foregroundStyle(
+                ThemeApp.Colors.roadmapLine)
+            }
+          }
+        }
+        GlassCard {
+          VStack(alignment: .leading, spacing: 14) {
+            Label("Current level", systemImage: state.level.icon).font(
+              ThemeApp.Fonts.ctaButton(size: 16))
+            Text(levelDescription).font(ThemeApp.Fonts.bodyText(size: 14)).foregroundStyle(
+              .white.opacity(0.72))
+            Divider().overlay(.white.opacity(0.2))
+            Label("\(state.characters.count) characters unlocked", systemImage: "person.2.fill")
+              .font(ThemeApp.Fonts.bodyText(size: 14))
+          }.foregroundStyle(.white)
+        }
+        Spacer()
+      }.padding(20).foregroundStyle(.white)
+    }
+  }
+
+  private var levelDescription: String {
+    switch state.level {
+    case .beginner: "Start with friendly, everyday conversations."
+    case .intermediate: "Take on more varied real-life situations."
+    case .advanced: "Handle complex conversations with confidence."
+    }
   }
 }
 
@@ -106,7 +156,7 @@ struct ChapterRoadmapCard: View {
             ThemeApp.Colors.roadmapLine,
             style: StrokeStyle(lineWidth: 14, lineCap: .round, lineJoin: .round)
           ).padding(.vertical, 12)
-          VStack(spacing: 12) {
+          VStack(spacing: 24) {
             ForEach(Array(situations.enumerated()), id: \.element.id) { index, situation in
               LongRoadMapNode(
                 situation: situation, index: index, isLeading: index.isMultiple(of: 2),
@@ -129,50 +179,58 @@ struct LongRoadMapNode: View {
     let progress = state.progress(for: situation)
     GeometryReader { proxy in
       let markerX = proxy.size.width / 2 + curveOffset
-      let labelWidth = min(160, proxy.size.width * 0.42)
+      let labelWidth = min(150, proxy.size.width * 0.38)
       ZStack {
         nodeLabel(progress)
           .frame(width: labelWidth)
           .position(
             x: labelCenter(
-              markerX: markerX, labelWidth: labelWidth, containerWidth: proxy.size.width), y: 38)
-        marker(progress).position(x: markerX, y: 38)
+              markerX: markerX, labelWidth: labelWidth, containerWidth: proxy.size.width), y: 60)
+        marker(progress).position(x: markerX, y: 60)
       }
-    }.frame(height: 76)
+    }.frame(height: 132)
   }
   private var curveOffset: CGFloat {
-    let offsets: [CGFloat] = [0, 24, 34, 8, -24, -36, -12, 22, 32, 0]
+    let offsets: [CGFloat] = [0, 52, 0, -52, 0, 52, 0, -52, 0, 52]
     return offsets[index % offsets.count]
   }
   private func marker(_ progress: SituationProgress) -> some View {
     ZStack {
-      Circle().fill(situation.color).frame(width: 56, height: 56)
-      Image(systemName: situation.icon).font(.body.weight(.black)).foregroundStyle(
-        ThemeApp.Colors.textDark.opacity(progress == .locked ? 0.45 : 1))
+      Circle().fill(situation.color).frame(width: 96, height: 96)
+      if let assetName = situation.imageAsset, let image = UIImage(named: assetName) {
+        Image(uiImage: image).resizable().scaledToFill().frame(width: 88, height: 88).clipShape(
+          Circle())
+      } else {
+        Image(systemName: situation.icon).font(.system(size: 34, weight: .black)).foregroundStyle(
+          ThemeApp.Colors.textDark.opacity(progress == .locked ? 0.45 : 1))
+      }
       if progress == .locked {
-        Circle().fill(ThemeApp.Colors.backgroundDark.opacity(0.62)).frame(width: 56, height: 56)
-        Image(systemName: "lock.fill").font(.body.weight(.black)).foregroundStyle(
+        Circle().fill(ThemeApp.Colors.backgroundDark.opacity(0.62)).frame(width: 96, height: 96)
+        Image(systemName: "lock.fill").font(.title.weight(.black)).foregroundStyle(
           .white.opacity(0.78))
       }
-    }.overlay(Circle().stroke(.white.opacity(0.75), lineWidth: 3)).zIndex(1)
+    }.overlay(Circle().stroke(.white.opacity(0.75), lineWidth: 4)).zIndex(1)
   }
   private func labelCenter(markerX: CGFloat, labelWidth: CGFloat, containerWidth: CGFloat)
     -> CGFloat
   {
-    let desired = isLeading ? markerX - labelWidth / 2 - 42 : markerX + labelWidth / 2 + 42
+    let desired =
+      curveOffset >= 0
+      ? markerX - labelWidth / 2 - 62
+      : markerX + labelWidth / 2 + 62
     return min(max(desired, labelWidth / 2), containerWidth - labelWidth / 2)
   }
   private func nodeLabel(_ progress: SituationProgress) -> some View {
     Button {
       if progress != .locked { select(situation) }
     } label: {
-      VStack(alignment: isLeading ? .trailing : .leading, spacing: 3) {
+      VStack(alignment: curveOffset >= 0 ? .trailing : .leading, spacing: 3) {
         Text("\(situation.id). \(situation.title)").font(ThemeApp.Fonts.ctaButton(size: 13))
           .lineLimit(2)
         Text(progress.label).font(ThemeApp.Fonts.bodyText(size: 11)).foregroundStyle(
           progress == .locked ? .white.opacity(0.6) : ThemeApp.Colors.roadmapLine)
       }.foregroundStyle(progress == .locked ? .white.opacity(0.5) : .white).frame(
-        maxWidth: .infinity, alignment: isLeading ? .trailing : .leading
+        maxWidth: .infinity, alignment: curveOffset >= 0 ? .trailing : .leading
       ).padding(.horizontal, 10).padding(.vertical, 8).background(
         progress == .locked ? Color.white.opacity(0.08) : Color.white.opacity(0.14)
       ).clipShape(RoundedRectangle(cornerRadius: ThemeApp.Radius.tag))
@@ -183,22 +241,31 @@ struct LongRoadMapNode: View {
 struct CurvedRoadLine: Shape {
   let nodeCount: Int
   func path(in rect: CGRect) -> Path {
-    let offsets: [CGFloat] = [0, 24, 34, 8, -24, -36, -12, 22, 32, 0]
-    let top: CGFloat = 38
-    let spacing: CGFloat = 88
+    let offsets: [CGFloat] = [0, 52, 0, -52, 0, 52, 0, -52, 0, 52]
+    let top: CGFloat = 60
+    let spacing: CGFloat = 156
     let centerX = rect.midX
     var path = Path()
     guard nodeCount > 0 else { return path }
-    var previous = CGPoint(x: centerX + offsets[0], y: top)
-    path.move(to: previous)
-    for index in 1..<nodeCount {
-      let next = CGPoint(
-        x: centerX + offsets[index % offsets.count], y: top + CGFloat(index) * spacing)
-      let control = CGPoint(
-        x: (previous.x + next.x) / 2 + (index.isMultiple(of: 2) ? 16 : -16),
-        y: (previous.y + next.y) / 2)
-      path.addQuadCurve(to: next, control: control)
-      previous = next
+    let points = (0..<nodeCount).map {
+      CGPoint(x: centerX + offsets[$0 % offsets.count], y: top + CGFloat($0) * spacing)
+    }
+    path.move(to: points[0])
+    for index in 0..<(points.count - 1) {
+      let before = points[max(0, index - 1)]
+      let start = points[index]
+      let end = points[index + 1]
+      let after = points[min(points.count - 1, index + 2)]
+      let smoothing: CGFloat = 0.14
+      let control1 = CGPoint(
+        x: start.x + (end.x - before.x) * smoothing,
+        y: start.y + (end.y - before.y) * smoothing
+      )
+      let control2 = CGPoint(
+        x: end.x - (after.x - start.x) * smoothing,
+        y: end.y - (after.y - start.y) * smoothing
+      )
+      path.addCurve(to: end, control1: control1, control2: control2)
     }
     return path
   }

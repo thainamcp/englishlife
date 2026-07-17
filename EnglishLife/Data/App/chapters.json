@@ -1,7 +1,37 @@
 [
-  { "id": 1, "title": "Café Corner", "subtitle": "10 everyday café conversations", "icon": "cup.and.saucer.fill", "colorHex": "#EF875F" },
-  { "id": 2, "title": "City Explorer", "subtitle": "10 missions around the city", "icon": "building.2.fill", "colorHex": "#9ED9BD" },
-  { "id": 3, "title": "Market Day", "subtitle": "10 shopping and food missions", "icon": "basket.fill", "colorHex": "#E897A9" },
-  { "id": 4, "title": "Social Club", "subtitle": "10 ways to connect with people", "icon": "person.3.fill", "colorHex": "#F4C430" },
-  { "id": 5, "title": "Travel Quest", "subtitle": "10 travel English adventures", "icon": "airplane", "colorHex": "#9CC7E8" }
+  {
+    "id": "1",
+    "title": "Settling Into a New Life",
+    "subtitle": "Greetings, self-introductions, and essential needs",
+    "icon": "house.fill",
+    "colorHex": "#EF875F"
+  },
+  {
+    "id": "2",
+    "title": "Building a Daily Routine",
+    "subtitle": "Shopping, transport, and polite everyday service",
+    "icon": "cart.fill",
+    "colorHex": "#9ED9BD"
+  },
+  {
+    "id": "3",
+    "title": "Connecting With the Community",
+    "subtitle": "Building relationships and joining social activities",
+    "icon": "person.3.fill",
+    "colorHex": "#E897A9"
+  },
+  {
+    "id": "4",
+    "title": "Work, Study, and Essential Services",
+    "subtitle": "Explaining issues and handling formal situations",
+    "icon": "briefcase.fill",
+    "colorHex": "#F4C430"
+  },
+  {
+    "id": "5",
+    "title": "Living Independently With Confidence",
+    "subtitle": "Negotiating and handling complex real-life situations",
+    "icon": "figure.strengthtraining.traditional",
+    "colorHex": "#9CC7E8"
+  }
 ]
