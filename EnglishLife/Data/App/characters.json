@@ -1,0 +1,5 @@
+[
+  { "id": "barista-alex", "name": "Alex", "role": "Friendly café barista", "vibe": "Friendly", "hair": "Curly", "accessory": "Glasses", "avatarAsset": "Characters" },
+  { "id": "guide-jamie", "name": "Jamie", "role": "Helpful city guide", "vibe": "Cheerful", "hair": "Short", "accessory": "Cap", "avatarAsset": "Characters" },
+  { "id": "vendor-taylor", "name": "Taylor", "role": "Warm market vendor", "vibe": "Cool", "hair": "Long", "accessory": "Earrings", "avatarAsset": "Characters" }
+]
