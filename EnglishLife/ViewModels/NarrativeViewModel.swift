@@ -4,7 +4,7 @@ import Foundation
 struct SituationAIContext: Codable {
   let userName: String
   let level: String
-  let situationID: Int
+  let situationID: String
   let situationTitle: String
   let situationStory: String
   var targetKeywords: [String]
@@ -39,7 +39,7 @@ final class NarrativeViewModel: ObservableObject {
         "Guide the learner through \(situation.title) naturally and encourage the target keywords.",
       welcomeMessage: nil
     )
-    if useCachedGuidance, let cached = cache.guidance(for: situation.id) {
+    if useCachedGuidance, let cached = cache.guidance(for: newContext) {
       newContext.targetKeywords = cached.keywords
       newContext.welcomeMessage = cached.welcomeMessage
     }
@@ -48,7 +48,7 @@ final class NarrativeViewModel: ObservableObject {
 
   func requestGuidance(preferCached: Bool = false) async {
     guard let context, !isLoading else { return }
-    if preferCached, let cached = cache.guidance(for: context.situationID) {
+    if preferCached, let cached = cache.guidance(for: context) {
       apply(cached, to: context)
       return
     }
@@ -58,7 +58,7 @@ final class NarrativeViewModel: ObservableObject {
 
     do {
       let guidance = try await client.generate(for: context)
-      cache.save(guidance, for: context.situationID)
+      cache.save(guidance, for: context)
       apply(guidance, to: context)
     } catch {
       errorMessage = error.localizedDescription

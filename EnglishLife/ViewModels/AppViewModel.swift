@@ -8,8 +8,17 @@ final class AppViewModel: ObservableObject {
   @Published var selectedTab = 0
   @Published var characters: [Character] = [] { didSet { persistJourney() } }
   @Published var activeChatSession: ChatSession?
-  @Published private(set) var completedSituationIDs: Set<Int> = [] { didSet { persistJourney() } }
-  @Published private(set) var resumeSituationID: Int? { didSet { persistJourney() } }
+  @Published private(set) var completedSituationIDs: Set<String> = [] {
+    didSet { persistJourney() }
+  }
+  @Published private(set) var resumeSituationID: String? { didSet { persistJourney() } }
+  @Published private(set) var studyPathDefinition: StudyPathDefinition?
+  @Published private(set) var chapters: [AdventureChapter] = []
+  @Published private(set) var situations: [Situation] = []
+  @Published private(set) var isGeneratingStudyPath = false
+  @Published private(set) var studyPathError: String?
+
+  private let studyPathClient = StudyPathGenerationAPIClient()
 
   init() {
     let snapshot = LearnerProgressStore.load()
@@ -17,6 +26,7 @@ final class AppViewModel: ObservableObject {
     completedSituationIDs = snapshot.completedSituationIDs
     resumeSituationID = snapshot.resumeSituationID
     characters = snapshot.characters
+    applyStudyPath(snapshot.studyPath)
   }
 
   func character(for situation: Situation) -> Character? {
@@ -24,7 +34,7 @@ final class AppViewModel: ObservableObject {
       // Keeps learners' characters from an older app version usable before the
       // persisted record has been migrated on the next launch.
       guard character.templateID == nil else { return false }
-      return AppContentRepository.shared.situations.first(where: {
+      return situations.first(where: {
         $0.title == character.situationTitle
       })?.characterID == situation.characterID
     }
@@ -46,17 +56,20 @@ final class AppViewModel: ObservableObject {
 
   func progress(for situation: Situation) -> SituationProgress {
     if completedSituationIDs.contains(situation.id) { return .completed }
-    if situation.id == 1 || completedSituationIDs.contains(situation.id - 1) { return .available }
+    guard let index = situations.firstIndex(where: { $0.id == situation.id }) else {
+      return .locked
+    }
+    if index == 0 || completedSituationIDs.contains(situations[index - 1].id) { return .available }
     return .locked
   }
 
   func complete(_ situation: Situation) {
     guard progress(for: situation) == .available else { return }
     completedSituationIDs.insert(situation.id)
-    resumeSituationID =
-      AppContentRepository.shared.situations.contains(where: { $0.id == situation.id + 1 })
-      ? situation.id + 1
-      : nil
+    let nextIndex = situations.firstIndex(where: { $0.id == situation.id }).map { $0 + 1 }
+    resumeSituationID = nextIndex.flatMap {
+      situations.indices.contains($0) ? situations[$0].id : nil
+    }
   }
 
   func startLearning(_ situation: Situation) {
@@ -73,11 +86,49 @@ final class AppViewModel: ObservableObject {
     activeChatSession = ChatSession(character: character, situation: situation)
   }
 
+  /// Generates and saves the learner's one-time personalized roadmap.
+  func createStudyPath(for selectedLevel: EnglishLevel) async {
+    guard !isGeneratingStudyPath else { return }
+    level = selectedLevel
+    isGeneratingStudyPath = true
+    studyPathError = nil
+    defer { isGeneratingStudyPath = false }
+
+    do {
+      applyStudyPath(try await studyPathClient.generate(for: selectedLevel))
+      persistJourney()
+    } catch {
+      // The bundled content keeps onboarding usable offline; it is not used
+      // once a generated path has been successfully saved.
+      applyStudyPath(nil)
+      studyPathError = error.localizedDescription
+      persistJourney()
+    }
+  }
+
+  func ensureStudyPath() async {
+    guard studyPathDefinition == nil else { return }
+    await createStudyPath(for: level)
+  }
+
+  private func applyStudyPath(_ definition: StudyPathDefinition?) {
+    studyPathDefinition = definition
+    let path =
+      definition.map { AppContentRepository.shared.runtimePath(from: $0) }
+      ?? RuntimeStudyPath(
+        chapters: AppContentRepository.shared.chapters,
+        situations: AppContentRepository.shared.situations
+      )
+    chapters = path.chapters
+    situations = path.situations
+  }
+
   private func persistJourney() {
     LearnerProgressStore.save(
       level: level,
       completedSituationIDs: completedSituationIDs,
       resumeSituationID: resumeSituationID,
-      characters: characters)
+      characters: characters,
+      studyPath: studyPathDefinition)
   }
 }

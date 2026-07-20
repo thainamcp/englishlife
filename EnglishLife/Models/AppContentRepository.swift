@@ -6,7 +6,6 @@ private struct ChapterDTO: Decodable {
   let title: String
   let subtitle: String
   let icon: String
-  let colorHex: String
 }
 
 private struct SituationDTO: Decodable {
@@ -36,12 +35,16 @@ private struct SceneLocation: Decodable {
   let backgroundAsset: String?
 }
 
-/// The roadmap's source of truth. Add or edit records in `Data/App/*.json`.
+/// Provides the bundled roadmap only as an offline fallback and maps an
+/// AI-generated `StudyPathDefinition` into the app's runtime view models.
 struct AppContentRepository {
   static let shared = AppContentRepository()
 
   let chapters: [AdventureChapter]
   let situations: [Situation]
+
+  private let charactersByID: [String: CharacterTemplateDTO]
+  private let locationsByID: [String: SceneLocation]
 
   private init() {
     guard
@@ -55,45 +58,129 @@ struct AppContentRepository {
         [CharacterTemplateDTO].self, from: characterData),
       let locationDTOs = try? JSONDecoder().decode([SceneLocation].self, from: locationData)
     else {
+      charactersByID = [:]
+      locationsByID = [:]
       chapters = []
       situations = []
       return
     }
 
-    chapters = chapterDTOs.compactMap { item -> AdventureChapter? in
-      guard let id = Int(item.id) else { return nil }
-      return AdventureChapter(
-        id: id, title: item.title, subtitle: item.subtitle, icon: item.icon,
-        color: Color(hex: item.colorHex))
+    let characterLookup = Dictionary(uniqueKeysWithValues: characterDTOs.map { ($0.id, $0) })
+    let locationLookup = Dictionary(uniqueKeysWithValues: locationDTOs.map { ($0.id, $0) })
+    charactersByID = characterLookup
+    locationsByID = locationLookup
+
+    let fallbackDefinition = Self.fallbackDefinition(
+      chapters: chapterDTOs,
+      situations: situationDTOs
+    )
+    let fallbackPath = Self.makeRuntimePath(
+      from: fallbackDefinition,
+      charactersByID: characterLookup,
+      locationsByID: locationLookup
+    )
+    chapters = fallbackPath.chapters
+    situations = fallbackPath.situations
+  }
+
+  func runtimePath(from definition: StudyPathDefinition) -> RuntimeStudyPath {
+    Self.makeRuntimePath(
+      from: definition,
+      charactersByID: charactersByID,
+      locationsByID: locationsByID
+    )
+  }
+
+  private static func fallbackDefinition(
+    chapters: [ChapterDTO],
+    situations: [SituationDTO]
+  ) -> StudyPathDefinition {
+    StudyPathDefinition(
+      chapters: chapters.map { chapter in
+        return StudyPathChapterDefinition(
+          id: chapter.id,
+          title: chapter.title,
+          subtitle: chapter.subtitle,
+          icon: chapter.icon,
+          situations: situations.compactMap { situation in
+            guard situation.chapterId == chapter.id else {
+              return nil
+            }
+            return StudyPathSituationDefinition(
+              id: situation.id,
+              chapterID: chapter.id,
+              title: situation.title,
+              subtitle: "Practice practical English for your new life.",
+              story:
+                "A real-life moment is waiting. Use English to handle \(situation.title.lowercased()).",
+              icon: situation.icon,
+              imageAsset: situation.imageAsset,
+              keywordSeeds: situation.keywords,
+              characterID: situation.characterId,
+              locationID: situation.locationId
+            )
+          }
+        )
+      }
+    )
+  }
+
+  private static func makeRuntimePath(
+    from definition: StudyPathDefinition,
+    charactersByID: [String: CharacterTemplateDTO],
+    locationsByID: [String: SceneLocation]
+  ) -> RuntimeStudyPath {
+    let chapterColors = [
+      ThemeApp.Colors.primary,
+      ThemeApp.Colors.accent,
+      ThemeApp.Colors.roadmapLine,
+      ThemeApp.Colors.backgroundLight,
+      ThemeApp.Colors.accentPink,
+    ]
+    let chapterDefinitions = definition.chapters.sorted { (Int($0.id) ?? 0) < (Int($1.id) ?? 0) }
+    let chapters = chapterDefinitions.enumerated().map { index, chapter in
+      AdventureChapter(
+        id: chapter.id,
+        title: chapter.title,
+        subtitle: chapter.subtitle,
+        icon: chapter.icon,
+        color: chapterColors[index % chapterColors.count]
+      )
     }
     let chaptersByID = Dictionary(uniqueKeysWithValues: chapters.map { ($0.id, $0) })
-    let charactersByID = Dictionary(uniqueKeysWithValues: characterDTOs.map { ($0.id, $0) })
-    let locationsByID = Dictionary(uniqueKeysWithValues: locationDTOs.map { ($0.id, $0) })
-    situations = situationDTOs.compactMap { item -> Situation? in
-      guard let id = Int(item.id), let chapterID = Int(item.chapterId),
-        let chapter = chaptersByID[chapterID]
-      else { return nil }
-      let unlockTitle =
-        situationDTOs.first(where: { Int($0.id) == id + 1 })?.title ?? "English Mastery"
-      let character =
-        charactersByID[item.characterId]
-        ?? characterDTOs.first
-        ?? CharacterTemplateDTO(
-          id: "alex", name: "Alex", gender: "Man", vibe: "Friendly", hair: "Curly",
-          accessory: "Glasses")
-      guard let location = locationsByID[item.locationId] else { return nil }
+    let situationDefinitions = chapterDefinitions.flatMap(\.situations).sorted {
+      (Int($0.id) ?? 0) < (Int($1.id) ?? 0)
+    }
+    let fallbackCharacter = CharacterTemplateDTO(
+      id: "barista-alex", name: "Alex", gender: "Man", vibe: "Friendly", hair: "Curly",
+      accessory: "Glasses"
+    )
+    let fallbackLocation = SceneLocation(
+      id: "coffee-shop", name: "Coffee Shop",
+      prompt: "a warm welcoming neighborhood coffee shop", backgroundAsset: "coffeeshope_background"
+    )
+    let situations = situationDefinitions.compactMap { item -> Situation? in
+      guard let chapter = chaptersByID[item.chapterID] else { return nil }
+      let character = charactersByID[item.characterID] ?? fallbackCharacter
+      let location = locationsByID[item.locationID] ?? fallbackLocation
+      let currentIndex = situationDefinitions.firstIndex(where: { $0.id == item.id })
+      let unlock =
+        currentIndex.flatMap { index in
+          situationDefinitions.indices.contains(index + 1)
+            ? situationDefinitions[index + 1].title : nil
+        } ?? "English Mastery"
       return Situation(
-        id: id,
+        id: item.id,
         chapter: "Chapter \(chapter.id) · \(chapter.title)",
         title: item.title,
-        subtitle: "Practice practical English for your new life.",
+        subtitle: item.subtitle,
         icon: item.icon,
         imageAsset: item.imageAsset,
         color: chapter.color,
-        goals: item.keywords,
-        reward: 45 + id * 5,
-        unlock: unlockTitle,
-        story: "A real-life moment is waiting. Use English to handle \(item.title.lowercased()).",
+        goals: item.keywordSeeds,
+        reward: 45 + (Int(item.id) ?? 0) * 5,
+        unlock: unlock,
+        story: item.story,
         characterID: character.id,
         characterName: character.name,
         characterGender: character.gender ?? "Non-binary",
@@ -106,6 +193,7 @@ struct AppContentRepository {
         locationBackgroundAsset: location.backgroundAsset
       )
     }
+    return RuntimeStudyPath(chapters: chapters, situations: situations)
   }
 
   private static func data(named name: String) -> Data? {
@@ -115,5 +203,4 @@ struct AppContentRepository {
       ?? bundle.url(forResource: name, withExtension: "json")
     return url.flatMap { try? Data(contentsOf: $0) }
   }
-
 }

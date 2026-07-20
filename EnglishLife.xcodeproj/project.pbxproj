@@ -7,10 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		011DDA6F083463AEE9506B39 /* StudyPathModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2098C8548BD21186B73C246 /* StudyPathModels.swift */; };
 		02D9C22D63908CB94282C73B /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F0385DFEEB2C11BB614B8FE /* AppViewModel.swift */; };
 		14A090AE4241355170B39DB4 /* characters.json in Resources */ = {isa = PBXBuildFile; fileRef = 50731647A3A1812F04515923 /* characters.json */; };
 		2208C7449B48A539525A54F9 /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD5C3B30E0BEAD001A125E0 /* OnboardingFlow.swift */; };
 		23AD30679F9D2CD64FF3BE6D /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58E181ACCCC78B8E55743825 /* ChatViewModel.swift */; };
+		27A6D23B6CC7F1CA13E02B7B /* StudyPathGenerationAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EA77FC5A75C6BA297D68F2E /* StudyPathGenerationAPIClient.swift */; };
 		2C56190D3C5283F8C01A90B4 /* GeneratedMediaCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD13BF63416ED9DC0A0C76B4 /* GeneratedMediaCache.swift */; };
 		36167B742D19AC38896C764B /* EnglishLifeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1195189485D6D9BEAA7B30B2 /* EnglishLifeApp.swift */; };
 		3B76F1C837A181DCD5138744 /* ThemeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE0ED9BA3DBF65829BE9744 /* ThemeApp.swift */; };
@@ -68,8 +70,10 @@
 		73AC08B82CE745A336997F0F /* MapViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapViewModel.swift; sourceTree = "<group>"; };
 		7454165A416F4BA1B0591CE0 /* AppContentRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContentRepository.swift; sourceTree = "<group>"; };
 		8018160B2E156627E969D8E9 /* CharacterSetupViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterSetupViewModel.swift; sourceTree = "<group>"; };
+		8EA77FC5A75C6BA297D68F2E /* StudyPathGenerationAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyPathGenerationAPIClient.swift; sourceTree = "<group>"; };
 		A8C5A693A45EA573A76E0879 /* LearnerProgressStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearnerProgressStore.swift; sourceTree = "<group>"; };
 		BB095B191B3D7F17882311B7 /* MainJourney.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainJourney.swift; sourceTree = "<group>"; };
+		C2098C8548BD21186B73C246 /* StudyPathModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudyPathModels.swift; sourceTree = "<group>"; };
 		C48D39F5EF0FF07DB70A23D6 /* AppModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModels.swift; sourceTree = "<group>"; };
 		DA42C2D75874E9F03426A59E /* NarrativeAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NarrativeAPIClient.swift; sourceTree = "<group>"; };
 		DD13BF63416ED9DC0A0C76B4 /* GeneratedMediaCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneratedMediaCache.swift; sourceTree = "<group>"; };
@@ -101,6 +105,8 @@
 				DA42C2D75874E9F03426A59E /* NarrativeAPIClient.swift */,
 				2E6CA4647444B9435CE05FD0 /* OpenAIAPIClient.swift */,
 				197FD10DC3ED9FD6AD472230 /* SituationGuidanceCache.swift */,
+				8EA77FC5A75C6BA297D68F2E /* StudyPathGenerationAPIClient.swift */,
+				C2098C8548BD21186B73C246 /* StudyPathModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -311,6 +317,8 @@
 				B58F74919C0BF9CAD78FADE4 /* OpenAIAPIClient.swift in Sources */,
 				F8E250B3DF706288786C7F5D /* SituationGuidanceCache.swift in Sources */,
 				BFD3D41D5770C755F5DFB05B /* SituationSceneViewModel.swift in Sources */,
+				27A6D23B6CC7F1CA13E02B7B /* StudyPathGenerationAPIClient.swift in Sources */,
+				011DDA6F083463AEE9506B39 /* StudyPathModels.swift in Sources */,
 				3B76F1C837A181DCD5138744 /* ThemeApp.swift in Sources */,
 				A91793D3701E7EC158894CAF /* VoiceConversationViewModel.swift in Sources */,
 			);

@@ -3,13 +3,88 @@ import UIKit
 
 struct MainTabView: View {
   @EnvironmentObject private var state: AppViewModel
+
   var body: some View {
-    TabView(selection: $state.selectedTab) {
-      MapView().tabItem { Label("Map", systemImage: "map.fill") }.tag(0)
-      CharactersListView().tabItem { Label("Characters", systemImage: "person.2.fill") }.tag(1)
-      UserProfileView().tabItem { Label("User", systemImage: "person.crop.circle.fill") }.tag(2)
-    }.tint(ThemeApp.Colors.roadmapLine)
+    ZStack(alignment: .bottom) {
+      selectedScreen
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+          Color.clear.frame(height: 96)
+        }
+
+      MainTabBar(selection: $state.selectedTab)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 12)
+    }
+    .background(ThemeApp.Colors.canvas)
   }
+
+  @ViewBuilder
+  private var selectedScreen: some View {
+    switch state.selectedTab {
+    case 0:
+      MapView()
+    case 1:
+      CharactersListView()
+    default:
+      UserProfileView()
+    }
+  }
+}
+
+private struct MainTabBar: View {
+  @Binding var selection: Int
+
+  private let items = [
+    MainTabItem(title: "Map", icon: "map.fill"),
+    MainTabItem(title: "Characters", icon: "person.2.fill"),
+    MainTabItem(title: "Profile", icon: "person.fill"),
+  ]
+
+  var body: some View {
+    GeometryReader { proxy in
+      let itemWidth = proxy.size.width / CGFloat(items.count)
+
+      ZStack(alignment: .leading) {
+        Capsule()
+          .fill(ThemeApp.Colors.primary)
+
+        Capsule()
+          .fill(Color(hex: "#FFE900"))
+          .frame(width: itemWidth, height: proxy.size.height)
+          .offset(x: itemWidth * CGFloat(selection))
+          .animation(.spring(response: 0.28, dampingFraction: 0.82), value: selection)
+
+        HStack(spacing: 0) {
+          ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+            Button {
+              selection = index
+            } label: {
+              VStack(spacing: 4) {
+                Image(systemName: item.icon)
+                  .font(.system(size: 30, weight: .bold))
+                  .frame(height: 34)
+                Text(item.title)
+                  .font(ThemeApp.Fonts.ctaButton(size: 17))
+              }
+              .foregroundStyle(
+                index == selection ? ThemeApp.Colors.textPrimary : Color.white
+              )
+              .frame(width: itemWidth, height: proxy.size.height)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+          }
+        }
+      }
+      .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+    }
+    .frame(height: 76)
+  }
+}
+
+private struct MainTabItem {
+  let title: String
+  let icon: String
 }
 
 struct UserProfileView: View {
@@ -81,7 +156,7 @@ struct MapView: View {
           }
           Text("Complete each situation to unlock the next stop.").font(ThemeApp.Fonts.bodyText())
             .foregroundStyle(ThemeApp.Colors.textSecondary)
-          RoadMap(chapters: viewModel.chapters, situations: viewModel.situations) {
+          RoadMap(chapters: state.chapters, situations: state.situations) {
             viewModel.select($0, using: state)
           }
           GlassCard {
@@ -108,7 +183,8 @@ struct MapView: View {
       }
     }
     .task {
-      viewModel.restoreCurrentSituation(using: state)
+      await state.ensureStudyPath()
+      viewModel.restoreCurrentSituation(using: state, situations: state.situations)
     }
   }
 }
@@ -392,9 +468,9 @@ struct SituationCardView: View {
           userName: state.learnerName,
           level: state.level,
           situation: situation,
-          useCachedGuidance: progress == .completed)
+          useCachedGuidance: true)
         async let guidance = narrativeViewModel.requestGuidance(
-          preferCached: progress == .completed)
+          preferCached: true)
         async let scene = sceneViewModel.prepare(for: situation, character: existingCharacter)
         _ = await (guidance, scene)
       }

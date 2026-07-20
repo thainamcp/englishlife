@@ -9,13 +9,15 @@ struct LearnerProgressStore {
     static let completedSituationIDs = "completedSituationIDs"
     static let resumeSituationID = "resumeSituationID"
     static let characters = "savedCharacters"
+    static let studyPath = "learnerStudyPath"
   }
 
   struct Snapshot {
     var level: EnglishLevel
-    var completedSituationIDs: Set<Int>
-    var resumeSituationID: Int?
+    var completedSituationIDs: Set<String>
+    var resumeSituationID: String?
     var characters: [Character]
+    var studyPath: StudyPathDefinition?
   }
 
   private struct SavedCharacter: Codable {
@@ -33,26 +35,43 @@ struct LearnerProgressStore {
 
   static func load(using defaults: UserDefaults = .standard) -> Snapshot {
     let level = EnglishLevel(rawValue: defaults.string(forKey: Key.level) ?? "") ?? .beginner
-    let completed = Set(defaults.array(forKey: Key.completedSituationIDs) as? [Int] ?? [])
-    let resumeID = defaults.object(forKey: Key.resumeSituationID) as? Int
+    let completed = Set(
+      (defaults.array(forKey: Key.completedSituationIDs) as? [String])
+        ?? (defaults.array(forKey: Key.completedSituationIDs) as? [Int])?.map(String.init)
+        ?? []
+    )
+    let resumeID =
+      (defaults.object(forKey: Key.resumeSituationID) as? String)
+      ?? (defaults.object(forKey: Key.resumeSituationID) as? Int).map(String.init)
     let savedCharacters = decodeCharacters(defaults.data(forKey: Key.characters))
+    let studyPath: StudyPathDefinition?
+    if let data = defaults.data(forKey: Key.studyPath) {
+      studyPath = try? JSONDecoder().decode(StudyPathDefinition.self, from: data)
+    } else {
+      studyPath = nil
+    }
 
     return Snapshot(
       level: level,
       completedSituationIDs: completed,
       resumeSituationID: resumeID,
-      characters: savedCharacters.map(makeCharacter))
+      characters: savedCharacters.map(makeCharacter),
+      studyPath: studyPath)
   }
 
   static func save(
     level: EnglishLevel,
-    completedSituationIDs: Set<Int>,
-    resumeSituationID: Int?,
+    completedSituationIDs: Set<String>,
+    resumeSituationID: String?,
     characters: [Character],
+    studyPath: StudyPathDefinition?,
     using defaults: UserDefaults = .standard
   ) {
     defaults.set(level.rawValue, forKey: Key.level)
-    defaults.set(Array(completedSituationIDs).sorted(), forKey: Key.completedSituationIDs)
+    defaults.set(
+      Array(completedSituationIDs).sorted { (Int($0) ?? 0) < (Int($1) ?? 0) },
+      forKey: Key.completedSituationIDs
+    )
     if let resumeSituationID {
       defaults.set(resumeSituationID, forKey: Key.resumeSituationID)
     } else {
@@ -66,6 +85,11 @@ struct LearnerProgressStore {
         avatar: $0.avatar, avatarImageData: $0.avatarImageData)
     }
     defaults.set(try? JSONEncoder().encode(saved), forKey: Key.characters)
+    if let studyPath {
+      defaults.set(try? JSONEncoder().encode(studyPath), forKey: Key.studyPath)
+    } else {
+      defaults.removeObject(forKey: Key.studyPath)
+    }
   }
 
   private static func decodeCharacters(_ data: Data?) -> [SavedCharacter] {

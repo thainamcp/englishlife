@@ -8,6 +8,7 @@ enum OpenAIModel {
 }
 
 enum APIFlow: String, CaseIterable {
+  case studyPath
   case narrative
   case characterChat
   case realtimeVoice
@@ -15,6 +16,7 @@ enum APIFlow: String, CaseIterable {
 
   var description: String {
     switch self {
+    case .studyPath: "Personalized study-path generation after onboarding"
     case .narrative: "AI story guidance for situation setup and reveal"
     case .characterChat: "Text conversation between user and character"
     case .realtimeVoice: "Live voice conversation between user and character"
@@ -24,6 +26,7 @@ enum APIFlow: String, CaseIterable {
 
   fileprivate var infoKey: String {
     switch self {
+    case .studyPath: "STUDY_PATH_API_KEY"
     case .narrative: "NARRATIVE_API_KEY"
     case .characterChat: "CHARACTER_CHAT_API_KEY"
     case .realtimeVoice: "REALTIME_API_KEY"
@@ -45,6 +48,9 @@ enum APIConfiguration {
     let value =
       secrets[flow.infoKey] as? String
       ?? Bundle.main.object(forInfoDictionaryKey: flow.infoKey) as? String
+      // Study-path generation is text-to-text, so it shares the narrative key
+      // unless a dedicated STUDY_PATH_API_KEY is supplied.
+      ?? (flow == .studyPath ? secrets[APIFlow.narrative.infoKey] as? String : nil)
     guard let value else { return nil }
     let key = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return key.isEmpty || key.hasPrefix("$(") ? nil : key

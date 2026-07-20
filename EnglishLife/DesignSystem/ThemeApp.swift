@@ -2,38 +2,38 @@ import SwiftUI
 
 struct ThemeApp {
   struct Colors {
-    // English foundations, extracted from the onboarding Figma frames.
-    static let canvas = Color(hex: "#FAF6F0")
-    static let primary = Color(hex: "#2E6F40")
-    static let primaryLight = Color(hex: "#5A9B6B")
-    static let accent = Color(hex: "#FF9F43")
-    static let border = Color(hex: "#EADFC9")
-    static let textPrimary = Color(hex: "#22252A")
-    static let textSecondary = Color(hex: "#6D727A")
-    static let surface = Color.white.opacity(0.70)
+    // Onboarding Figma foundations — node 26:890.
+    static let canvas = Color(hex: "#FFFFFF")
+    static let primary = Color(hex: "#49B0AC")
+    static let primaryLight = Color(hex: "#E6F4F4")
+    static let accent = Color(hex: "#49B0AC")
+    static let border = Color(hex: "#0D0D0D")
+    static let textPrimary = Color(hex: "#0D0D0D")
+    static let textSecondary = Color(hex: "#959595")
+    static let surface = Color(hex: "#FAFEFD")
 
     // Existing semantic names retained so every screen adopts the new theme.
     static let backgroundDark = canvas
-    static let backgroundLight = Color.white
-    static let roadmapLine = accent
-    static let riverBlue = Color(hex: "#DDEDE1")
-    static let accentPink = Color(hex: "#F6B6A4")
+    static let backgroundLight = surface
+    static let roadmapLine = primary
+    static let riverBlue = primaryLight
+    static let accentPink = Color(hex: "#8BCFCB")
     static let textLight = textPrimary
     static let textDark = textPrimary
     static let cardBackground = surface
-    static let mint = Color(hex: "#BFE3C8")
-    static let coral = accent
+    static let mint = primaryLight
+    static let coral = primary
   }
 
   struct Fonts {
     static func gameTitle(size: CGFloat = 28) -> Font {
-      .system(size: size, weight: .black, design: .rounded)
+      .system(size: size, weight: .bold)
     }
     static func bodyText(size: CGFloat = 16) -> Font {
-      .system(size: size, weight: .medium, design: .rounded)
+      .system(size: size, weight: .regular)
     }
     static func ctaButton(size: CGFloat = 18) -> Font {
-      .system(size: size, weight: .bold, design: .rounded)
+      .system(size: size, weight: .bold)
     }
   }
 

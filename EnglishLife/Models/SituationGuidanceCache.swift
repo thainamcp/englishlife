@@ -1,28 +1,34 @@
 import Foundation
 
-/// Persists the AI-generated welcome and mission keywords for each situation.
-/// A completed situation reuses this result instead of making another API call.
+/// Persists the AI-generated welcome and mission keywords for a specific
+/// learner level and generated situation. Any later visit reuses it.
 struct SituationGuidanceCache {
   static let shared = SituationGuidanceCache()
 
   private let key = "cachedSituationGuidance.v1"
 
-  func guidance(for situationID: Int, using defaults: UserDefaults = .standard) -> NodeGuidance? {
-    allGuidance(using: defaults)[String(situationID)]
+  func guidance(for context: SituationAIContext, using defaults: UserDefaults = .standard)
+    -> NodeGuidance?
+  {
+    allGuidance(using: defaults)[cacheKey(for: context)]
   }
 
   func save(
     _ guidance: NodeGuidance,
-    for situationID: Int,
+    for context: SituationAIContext,
     using defaults: UserDefaults = .standard
   ) {
     var records = allGuidance(using: defaults)
-    records[String(situationID)] = guidance
+    records[cacheKey(for: context)] = guidance
     defaults.set(try? JSONEncoder().encode(records), forKey: key)
   }
 
   private func allGuidance(using defaults: UserDefaults) -> [String: NodeGuidance] {
     guard let data = defaults.data(forKey: key) else { return [:] }
     return (try? JSONDecoder().decode([String: NodeGuidance].self, from: data)) ?? [:]
+  }
+
+  private func cacheKey(for context: SituationAIContext) -> String {
+    "\(context.situationID)|\(context.level)|\(context.situationTitle)"
   }
 }

@@ -10,16 +10,16 @@ enum EnglishLevel: String, CaseIterable, Identifiable {
 
   var icon: String {
     switch self {
-    case .beginner: "leaf.fill"
-    case .intermediate: "flame.fill"
-    case .advanced: "crown.fill"
+    case .beginner: "📖"
+    case .intermediate: "📚"
+    case .advanced: "🎓"
     }
   }
 }
 
-/// Runtime presentation model. Its content is loaded from `Data/App/situations.json`.
+/// Runtime presentation model built from the learner's generated study path.
 struct Situation: Identifiable, Hashable {
-  let id: Int
+  let id: String
   let chapter: String
   let title: String
   let subtitle: String
@@ -42,9 +42,9 @@ struct Situation: Identifiable, Hashable {
   let locationBackgroundAsset: String?
 }
 
-/// Runtime presentation model. Its content is loaded from `Data/App/chapters.json`.
+/// Runtime presentation model built from the learner's generated study path.
 struct AdventureChapter: Identifiable, Hashable {
-  let id: Int
+  let id: String
   let title: String
   let subtitle: String
   let icon: String
