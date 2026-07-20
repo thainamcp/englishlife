@@ -1,23 +1,16 @@
 import SwiftUI
+import UIKit
 
 struct AdventureBackground: View {
   var body: some View {
-    LinearGradient(
-      colors: [ThemeApp.Colors.backgroundLight, ThemeApp.Colors.backgroundDark],
-      startPoint: .topLeading, endPoint: .bottomTrailing
-    )
-    .overlay(alignment: .topTrailing) {
-      Circle().fill(ThemeApp.Colors.mint.opacity(0.16)).frame(width: 240).blur(radius: 2).offset(
-        x: 70, y: -90)
-    }
-    .ignoresSafeArea()
+    ThemeApp.Colors.canvas.ignoresSafeArea()
   }
 }
 
 struct GameButton: View {
   let title: String
   var icon: String? = nil
-  var color: Color = ThemeApp.Colors.roadmapLine
+  var color: Color = ThemeApp.Colors.primary
   let action: () -> Void
   var body: some View {
     Button(action: action) {
@@ -25,12 +18,11 @@ struct GameButton: View {
         Text(title).font(ThemeApp.Fonts.ctaButton(size: 16))
         if let icon { Image(systemName: icon).fontWeight(.black) }
       }
-      .foregroundStyle(ThemeApp.Colors.textDark)
+      .foregroundStyle(.white)
       .frame(maxWidth: .infinity).padding(.vertical, 16)
       .background(color).clipShape(RoundedRectangle(cornerRadius: ThemeApp.Radius.button))
       .overlay(
-        RoundedRectangle(cornerRadius: ThemeApp.Radius.button).stroke(
-          Color.white.opacity(0.35), lineWidth: 2)
+        RoundedRectangle(cornerRadius: ThemeApp.Radius.button).stroke(Color.white.opacity(0.2))
       )
       .shadow(color: color.opacity(0.35), radius: 10, y: 6)
     }.buttonStyle(.plain)
@@ -40,7 +32,7 @@ struct GameButton: View {
 struct GameNavigationLink<Destination: View>: View {
   let title: String
   var icon: String? = nil
-  var color: Color = ThemeApp.Colors.roadmapLine
+  var color: Color = ThemeApp.Colors.primary
   let destination: Destination
 
   var body: some View {
@@ -49,12 +41,11 @@ struct GameNavigationLink<Destination: View>: View {
         Text(title).font(ThemeApp.Fonts.ctaButton(size: 16))
         if let icon { Image(systemName: icon).fontWeight(.black) }
       }
-      .foregroundStyle(ThemeApp.Colors.textDark)
+      .foregroundStyle(.white)
       .frame(maxWidth: .infinity).padding(.vertical, 16)
       .background(color).clipShape(RoundedRectangle(cornerRadius: ThemeApp.Radius.button))
       .overlay(
-        RoundedRectangle(cornerRadius: ThemeApp.Radius.button).stroke(
-          Color.white.opacity(0.35), lineWidth: 2)
+        RoundedRectangle(cornerRadius: ThemeApp.Radius.button).stroke(Color.white.opacity(0.2))
       )
       .shadow(color: color.opacity(0.35), radius: 10, y: 6)
     }
@@ -67,10 +58,10 @@ struct GlassCard<Content: View>: View {
   init(@ViewBuilder content: () -> Content) { self.content = content() }
   var body: some View {
     content.padding(18).background(ThemeApp.Colors.cardBackground)
-      .background(.ultraThinMaterial.opacity(0.18))
+      .background(Color.white.opacity(0.48))
       .clipShape(RoundedRectangle(cornerRadius: ThemeApp.Radius.card))
       .overlay(
-        RoundedRectangle(cornerRadius: ThemeApp.Radius.card).stroke(Color.white.opacity(0.18)))
+        RoundedRectangle(cornerRadius: ThemeApp.Radius.card).stroke(ThemeApp.Colors.border))
   }
 }
 
@@ -82,7 +73,7 @@ struct GameTag: View {
       selected ? ThemeApp.Colors.textDark : ThemeApp.Colors.textLight
     )
     .padding(.horizontal, 12).padding(.vertical, 8)
-    .background(selected ? ThemeApp.Colors.roadmapLine : Color.white.opacity(0.12))
+    .background(selected ? ThemeApp.Colors.roadmapLine : Color.white)
     .clipShape(RoundedRectangle(cornerRadius: ThemeApp.Radius.tag))
   }
 }
@@ -99,7 +90,8 @@ struct SectionTitle: View {
       Text(title).font(ThemeApp.Fonts.gameTitle(size: 27)).foregroundStyle(
         ThemeApp.Colors.textLight)
       if let subtitle {
-        Text(subtitle).font(ThemeApp.Fonts.bodyText(size: 14)).foregroundStyle(.white.opacity(0.72))
+        Text(subtitle).font(ThemeApp.Fonts.bodyText(size: 14)).foregroundStyle(
+          ThemeApp.Colors.textSecondary)
       }
     }
   }
@@ -111,8 +103,14 @@ struct AvatarView: View {
   var body: some View {
     ZStack {
       Circle().fill(character.color)
-      Image(systemName: character.avatar).font(.system(size: size * 0.4, weight: .black))
-        .foregroundStyle(ThemeApp.Colors.textDark)
+      if let avatarImageData = character.avatarImageData, let image = UIImage(data: avatarImageData)
+      {
+        Image(uiImage: image).resizable().scaledToFill().frame(width: size, height: size).clipShape(
+          Circle())
+      } else {
+        Image(systemName: character.avatar).font(.system(size: size * 0.4, weight: .black))
+          .foregroundStyle(ThemeApp.Colors.textDark)
+      }
     }.frame(width: size, height: size).overlay(
       Circle().stroke(Color.white.opacity(0.7), lineWidth: 3))
   }

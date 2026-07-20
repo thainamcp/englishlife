@@ -4,7 +4,7 @@ import SwiftUI
 struct EnglishLifeApp: App {
   @StateObject private var state = AppViewModel()
   var body: some Scene {
-    WindowGroup { AppRouter().environmentObject(state).preferredColorScheme(.dark) }
+    WindowGroup { AppRouter().environmentObject(state).preferredColorScheme(.light) }
   }
 }
 

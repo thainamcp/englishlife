@@ -1,5 +1,12 @@
 import Foundation
 
+/// Central model selection for each OpenAI capability in the app.
+enum OpenAIModel {
+  static let textToText = "gpt-5.6-luna"
+  static let textToImage = "gpt-image-2"
+  static let realtimeVoice = "gpt-realtime-2.1-mini"
+}
+
 enum APIFlow: String, CaseIterable {
   case narrative
   case characterChat
@@ -35,7 +42,8 @@ enum APIConfiguration {
 
   /// Development-only convenience. Use backend-issued ephemeral tokens for production.
   static func key(for flow: APIFlow) -> String? {
-    let value = secrets[flow.infoKey] as? String
+    let value =
+      secrets[flow.infoKey] as? String
       ?? Bundle.main.object(forInfoDictionaryKey: flow.infoKey) as? String
     guard let value else { return nil }
     let key = value.trimmingCharacters(in: .whitespacesAndNewlines)

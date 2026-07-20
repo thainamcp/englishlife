@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 final class MapViewModel: ObservableObject {
   @Published var selectedSituation: Situation?
+  private var hasRestoredResume = false
 
   let chapters = AppContentRepository.shared.chapters
   let situations = AppContentRepository.shared.situations
@@ -13,6 +14,13 @@ final class MapViewModel: ObservableObject {
 
   func select(_ situation: Situation, using app: AppViewModel) {
     guard app.progress(for: situation) != .locked else { return }
+    app.startLearning(situation)
     selectedSituation = situation
+  }
+
+  func restoreCurrentSituation(using app: AppViewModel) {
+    guard !hasRestoredResume else { return }
+    hasRestoredResume = true
+    selectedSituation = app.situationToResume(from: situations)
   }
 }

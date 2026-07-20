@@ -19,7 +19,7 @@ struct UserProfileView: View {
     ZStack {
       AdventureBackground()
       VStack(alignment: .leading, spacing: 22) {
-        SectionTitle("Your profile", subtitle: "Your English Life adventure")
+        SectionTitle("Your profile", subtitle: "Your English adventure")
         GlassCard {
           HStack(spacing: 16) {
             ZStack {
@@ -40,14 +40,14 @@ struct UserProfileView: View {
             Label("Current level", systemImage: state.level.icon).font(
               ThemeApp.Fonts.ctaButton(size: 16))
             Text(levelDescription).font(ThemeApp.Fonts.bodyText(size: 14)).foregroundStyle(
-              .white.opacity(0.72))
-            Divider().overlay(.white.opacity(0.2))
+              ThemeApp.Colors.textSecondary)
+            Divider().overlay(ThemeApp.Colors.border)
             Label("\(state.characters.count) characters unlocked", systemImage: "person.2.fill")
               .font(ThemeApp.Fonts.bodyText(size: 14))
-          }.foregroundStyle(.white)
+          }.foregroundStyle(ThemeApp.Colors.textPrimary)
         }
         Spacer()
-      }.padding(20).foregroundStyle(.white)
+      }.padding(20).foregroundStyle(ThemeApp.Colors.textPrimary)
     }
   }
 
@@ -70,17 +70,17 @@ struct MapView: View {
         VStack(alignment: .leading, spacing: 18) {
           HStack {
             VStack(alignment: .leading) {
-              Text("English Life").font(ThemeApp.Fonts.gameTitle(size: 29))
+              Text("English").font(ThemeApp.Fonts.gameTitle(size: 29))
               Text("Hi, \(state.learnerName) · \(state.level.rawValue)").font(
                 ThemeApp.Fonts.bodyText(size: 14)
-              ).foregroundStyle(.white.opacity(0.75))
+              ).foregroundStyle(ThemeApp.Colors.textSecondary)
             }
             Spacer()
             Image(systemName: "star.fill").foregroundStyle(ThemeApp.Colors.roadmapLine).font(
               .title2)
           }
           Text("Complete each situation to unlock the next stop.").font(ThemeApp.Fonts.bodyText())
-            .foregroundStyle(.white.opacity(0.85))
+            .foregroundStyle(ThemeApp.Colors.textSecondary)
           RoadMap(chapters: viewModel.chapters, situations: viewModel.situations) {
             viewModel.select($0, using: state)
           }
@@ -91,13 +91,13 @@ struct MapView: View {
               VStack(alignment: .leading) {
                 Text("Your streak").font(ThemeApp.Fonts.bodyText())
                 Text("Start a conversation today!").font(ThemeApp.Fonts.bodyText(size: 13))
-                  .foregroundStyle(.white.opacity(0.7))
+                  .foregroundStyle(ThemeApp.Colors.textSecondary)
               }
               Spacer()
               Text("0 days").font(ThemeApp.Fonts.ctaButton(size: 14))
             }
           }
-        }.foregroundStyle(.white).padding(20).padding(.bottom, 16)
+        }.foregroundStyle(ThemeApp.Colors.textPrimary).padding(20).padding(.bottom, 16)
       }
     }
     .sheet(item: $viewModel.selectedSituation) { SituationCardView(situation: $0) }
@@ -106,6 +106,9 @@ struct MapView: View {
         state.activeChatSession = nil
         state.selectedTab = 0
       }
+    }
+    .task {
+      viewModel.restoreCurrentSituation(using: state)
     }
   }
 }
@@ -144,7 +147,7 @@ struct ChapterRoadmapCard: View {
             Text("Chapter \(chapter.id) · \(chapter.title)").font(
               ThemeApp.Fonts.ctaButton(size: 16))
             Text(chapter.subtitle).font(ThemeApp.Fonts.bodyText(size: 12)).foregroundStyle(
-              .white.opacity(0.68))
+              ThemeApp.Colors.textSecondary)
           }
           Spacer()
           Text("\(situations.filter { state.progress(for: $0) == .completed }.count)/10").font(
@@ -228,12 +231,19 @@ struct LongRoadMapNode: View {
         Text("\(situation.id). \(situation.title)").font(ThemeApp.Fonts.ctaButton(size: 13))
           .lineLimit(2)
         Text(progress.label).font(ThemeApp.Fonts.bodyText(size: 11)).foregroundStyle(
-          progress == .locked ? .white.opacity(0.6) : ThemeApp.Colors.roadmapLine)
-      }.foregroundStyle(progress == .locked ? .white.opacity(0.5) : .white).frame(
+          progress == .locked
+            ? ThemeApp.Colors.textSecondary.opacity(0.8) : ThemeApp.Colors.roadmapLine)
+      }.foregroundStyle(
+        progress == .locked
+          ? ThemeApp.Colors.textSecondary.opacity(0.65) : ThemeApp.Colors.textPrimary
+      ).frame(
         maxWidth: .infinity, alignment: curveOffset >= 0 ? .trailing : .leading
       ).padding(.horizontal, 10).padding(.vertical, 8).background(
-        progress == .locked ? Color.white.opacity(0.08) : Color.white.opacity(0.14)
-      ).clipShape(RoundedRectangle(cornerRadius: ThemeApp.Radius.tag))
+        progress == .locked ? ThemeApp.Colors.surface.opacity(0.65) : Color.white
+      ).clipShape(RoundedRectangle(cornerRadius: ThemeApp.Radius.tag)).overlay(
+        RoundedRectangle(cornerRadius: ThemeApp.Radius.tag).stroke(
+          ThemeApp.Colors.border.opacity(0.7))
+      )
     }.buttonStyle(.plain).disabled(progress == .locked)
   }
 }
@@ -275,8 +285,11 @@ struct SituationCardView: View {
   @EnvironmentObject private var state: AppViewModel
   @Environment(\.dismiss) private var dismiss
   let situation: Situation
-  @State private var goToSetup = false
+  @StateObject private var narrativeViewModel = NarrativeViewModel()
+  @StateObject private var sceneViewModel = SituationSceneViewModel()
+  @State private var showsCharacterSetup = false
   private var progress: SituationProgress { state.progress(for: situation) }
+  private var existingCharacter: Character? { state.character(for: situation) }
   var body: some View {
     NavigationStack {
       ZStack {
@@ -287,50 +300,170 @@ struct SituationCardView: View {
               situation.color)
             Spacer()
             Button("Close") { dismiss() }.font(ThemeApp.Fonts.bodyText(size: 14)).foregroundStyle(
-              .white)
+              ThemeApp.Colors.textPrimary)
           }
           Text(situation.chapter).font(ThemeApp.Fonts.bodyText(size: 13)).foregroundStyle(
             ThemeApp.Colors.roadmapLine)
-          Text(situation.title).font(ThemeApp.Fonts.gameTitle(size: 32)).foregroundStyle(.white)
+          Text(situation.title).font(ThemeApp.Fonts.gameTitle(size: 32)).foregroundStyle(
+            ThemeApp.Colors.textPrimary)
           Text(situation.subtitle).font(ThemeApp.Fonts.bodyText()).foregroundStyle(
-            .white.opacity(0.78))
+            ThemeApp.Colors.textSecondary)
+          Label(situation.locationName, systemImage: "mappin.and.ellipse")
+            .font(ThemeApp.Fonts.bodyText(size: 13))
+            .foregroundStyle(ThemeApp.Colors.primary)
           GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
+              Label("Your AI welcome", systemImage: "sparkles")
+                .font(ThemeApp.Fonts.ctaButton(size: 15))
+                .foregroundStyle(ThemeApp.Colors.roadmapLine)
+              if narrativeViewModel.isLoading {
+                HStack(spacing: 9) {
+                  ProgressView().tint(ThemeApp.Colors.roadmapLine)
+                  Text("Creating your personalized mission…")
+                }
+                .font(ThemeApp.Fonts.bodyText(size: 14))
+                .foregroundStyle(ThemeApp.Colors.textSecondary)
+              } else if let errorMessage = narrativeViewModel.errorMessage {
+                Text(errorMessage)
+                  .font(ThemeApp.Fonts.bodyText(size: 13))
+                  .foregroundStyle(ThemeApp.Colors.textSecondary)
+                Button("Try again") {
+                  Task { await narrativeViewModel.requestGuidance() }
+                }
+                .font(ThemeApp.Fonts.ctaButton(size: 13))
+                .foregroundStyle(ThemeApp.Colors.primary)
+              } else {
+                Text(narrativeViewModel.guidance)
+                  .font(ThemeApp.Fonts.bodyText(size: 14))
+                  .foregroundStyle(ThemeApp.Colors.textPrimary.opacity(0.86))
+                  .multilineTextAlignment(.leading)
+                  .lineLimit(nil)
+                  .fixedSize(horizontal: false, vertical: true)
+              }
+            }
+          }
+          GlassCard {
+            VStack(alignment: .leading, spacing: 14) {
               Label("Mission keywords", systemImage: "checkmark.seal.fill").font(
-                ThemeApp.Fonts.ctaButton(size: 15))
-              FlowTags(tags: situation.goals)
-              Divider().overlay(.white.opacity(0.2))
+                ThemeApp.Fonts.ctaButton(size: 15)
+              )
+              .foregroundStyle(ThemeApp.Colors.textPrimary)
+              if narrativeViewModel.isLoading {
+                KeywordLoadingGrid()
+              } else if let errorMessage = narrativeViewModel.errorMessage {
+                Label("Keywords will appear after retrying.", systemImage: "arrow.clockwise")
+                  .font(ThemeApp.Fonts.bodyText(size: 13))
+                  .foregroundStyle(ThemeApp.Colors.textSecondary)
+                  .accessibilityLabel(errorMessage)
+              } else {
+                MissionKeywordGrid(tags: narrativeViewModel.context?.targetKeywords ?? [])
+              }
+              Divider().overlay(ThemeApp.Colors.border)
               Label(
                 "+\(situation.reward) EXP · Unlock \(situation.unlock)", systemImage: "gift.fill"
-              ).font(ThemeApp.Fonts.bodyText(size: 14))
+              ).font(ThemeApp.Fonts.bodyText(size: 14)).foregroundStyle(
+                ThemeApp.Colors.textSecondary)
             }
           }
           Spacer()
           GameButton(
-            title: state.character(for: situation) == nil
-              ? "Meet your character"
-              : "Talk to \(state.character(for: situation)?.name ?? "character")",
-            icon: "arrow.right"
+            title: buttonTitle,
+            icon: buttonIcon
           ) {
-            if state.character(for: situation) == nil {
-              goToSetup = true
-            } else if let character = state.character(for: situation) {
-              dismiss()
-              DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                state.presentChat(character: character, situation: situation)
-              }
+            guard let character = existingCharacter else {
+              showsCharacterSetup = true
+              return
+            }
+            dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+              state.presentChat(character: character, situation: situation)
             }
           }
+          .disabled(
+            narrativeViewModel.isLoading || (existingCharacter != nil && sceneViewModel.isPreparing)
+          )
+          .opacity(
+            narrativeViewModel.isLoading || (existingCharacter != nil && sceneViewModel.isPreparing)
+              ? 0.58 : 1)
         }.padding(24)
       }
-      .navigationDestination(isPresented: $goToSetup) {
+      .task {
+        narrativeViewModel.configure(
+          userName: state.learnerName,
+          level: state.level,
+          situation: situation,
+          useCachedGuidance: progress == .completed)
+        async let guidance = narrativeViewModel.requestGuidance(
+          preferCached: progress == .completed)
+        async let scene = sceneViewModel.prepare(for: situation, character: existingCharacter)
+        _ = await (guidance, scene)
+      }
+      .navigationDestination(isPresented: $showsCharacterSetup) {
         CharacterSetupNameView(situation: situation, onHome: { dismiss() })
+      }
+    }
+  }
+
+  private var buttonTitle: String {
+    if existingCharacter == nil { return "Create \(situation.characterName)" }
+    return sceneViewModel.isPreparing ? "Preparing your scene…" : "Start speaking"
+  }
+
+  private var buttonIcon: String {
+    if existingCharacter == nil { return "person.badge.plus" }
+    return sceneViewModel.isPreparing ? "hourglass" : "mic.fill"
+  }
+}
+
+struct MissionKeywordGrid: View {
+  let tags: [String]
+
+  private let columns = [
+    GridItem(.flexible(), spacing: 10),
+    GridItem(.flexible(), spacing: 10),
+  ]
+
+  var body: some View {
+    LazyVGrid(columns: columns, spacing: 10) {
+      ForEach(Array(tags.enumerated()), id: \.offset) { index, keyword in
+        HStack(alignment: .top, spacing: 8) {
+          Text("\(index + 1)")
+            .font(ThemeApp.Fonts.ctaButton(size: 11))
+            .foregroundStyle(ThemeApp.Colors.primary)
+            .frame(width: 22, height: 22)
+            .background(ThemeApp.Colors.riverBlue, in: Circle())
+          Text(keyword)
+            .font(ThemeApp.Fonts.bodyText(size: 13))
+            .foregroundStyle(ThemeApp.Colors.textPrimary)
+            .lineLimit(2)
+            .multilineTextAlignment(.leading)
+          Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+        .padding(.horizontal, 10)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: ThemeApp.Radius.tag))
+        .overlay(
+          RoundedRectangle(cornerRadius: ThemeApp.Radius.tag).stroke(ThemeApp.Colors.border)
+        )
       }
     }
   }
 }
 
-struct FlowTags: View {
-  let tags: [String]
-  var body: some View { HStack(spacing: 7) { ForEach(tags, id: \.self) { GameTag(title: $0) } } }
+struct KeywordLoadingGrid: View {
+  private let columns = [
+    GridItem(.flexible(), spacing: 10),
+    GridItem(.flexible(), spacing: 10),
+  ]
+
+  var body: some View {
+    LazyVGrid(columns: columns, spacing: 10) {
+      ForEach(0..<4, id: \.self) { _ in
+        RoundedRectangle(cornerRadius: ThemeApp.Radius.tag)
+          .fill(ThemeApp.Colors.border.opacity(0.55))
+          .frame(height: 54)
+          .redacted(reason: .placeholder)
+      }
+    }
+  }
 }

@@ -1,0 +1,11 @@
+[
+  { "id": "coffee-shop", "name": "Coffee Shop", "prompt": "a warm welcoming neighborhood coffee shop, morning sunlight, wooden tables", "backgroundAsset": "coffeeshope_background" },
+  { "id": "apartment-entry", "name": "Apartment Entry", "prompt": "a welcoming apartment building entry with mailboxes and a secure glass door" },
+  { "id": "apartment-kitchen", "name": "Apartment Kitchen", "prompt": "a bright compact apartment kitchen with modern household appliances" },
+  { "id": "city-park", "name": "City Park", "prompt": "a lively city park path with trees, benches, and soft afternoon light" },
+  { "id": "community-lounge", "name": "Community Lounge", "prompt": "a cozy apartment community lounge with sofas and a notice board" },
+  { "id": "recycling-area", "name": "Recycling Area", "prompt": "a clean apartment recycling and waste collection area with clear bins" },
+  { "id": "city-street", "name": "City Street", "prompt": "a friendly walkable city street with shops, crosswalks, and signs" },
+  { "id": "supermarket", "name": "Supermarket", "prompt": "a bright neighborhood supermarket aisle with fresh groceries" },
+  { "id": "apartment-living-room", "name": "Apartment Living Room", "prompt": "a comfortable modern apartment living room with a Wi-Fi router" }
+]

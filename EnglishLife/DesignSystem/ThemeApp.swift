@@ -2,16 +2,27 @@ import SwiftUI
 
 struct ThemeApp {
   struct Colors {
-    static let backgroundDark = Color(hex: "#1A4347")
-    static let backgroundLight = Color(hex: "#2B686E")
-    static let roadmapLine = Color(hex: "#F4C430")
-    static let riverBlue = Color(hex: "#C5E3E6")
-    static let accentPink = Color(hex: "#E897A9")
-    static let textLight = Color.white
-    static let textDark = Color(hex: "#222222")
-    static let cardBackground = Color.white.opacity(0.15)
-    static let mint = Color(hex: "#9ED9BD")
-    static let coral = Color(hex: "#EF875F")
+    // English foundations, extracted from the onboarding Figma frames.
+    static let canvas = Color(hex: "#FAF6F0")
+    static let primary = Color(hex: "#2E6F40")
+    static let primaryLight = Color(hex: "#5A9B6B")
+    static let accent = Color(hex: "#FF9F43")
+    static let border = Color(hex: "#EADFC9")
+    static let textPrimary = Color(hex: "#22252A")
+    static let textSecondary = Color(hex: "#6D727A")
+    static let surface = Color.white.opacity(0.70)
+
+    // Existing semantic names retained so every screen adopts the new theme.
+    static let backgroundDark = canvas
+    static let backgroundLight = Color.white
+    static let roadmapLine = accent
+    static let riverBlue = Color(hex: "#DDEDE1")
+    static let accentPink = Color(hex: "#F6B6A4")
+    static let textLight = textPrimary
+    static let textDark = textPrimary
+    static let cardBackground = surface
+    static let mint = Color(hex: "#BFE3C8")
+    static let coral = accent
   }
 
   struct Fonts {
@@ -27,9 +38,9 @@ struct ThemeApp {
   }
 
   struct Radius {
-    static let card: CGFloat = 20
-    static let button: CGFloat = 16
-    static let tag: CGFloat = 8
+    static let card: CGFloat = 24
+    static let button: CGFloat = 28
+    static let tag: CGFloat = 12
   }
 }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum EnglishLevel: String, CaseIterable, Identifiable {
   case beginner = "Beginner"
@@ -29,6 +30,16 @@ struct Situation: Identifiable, Hashable {
   let reward: Int
   let unlock: String
   let story: String
+  let characterID: String
+  let characterName: String
+  let characterGender: String
+  let characterVibe: String
+  let characterHair: String
+  let characterAccessory: String
+  let locationID: String
+  let locationName: String
+  let locationPrompt: String
+  let locationBackgroundAsset: String?
 }
 
 /// Runtime presentation model. Its content is loaded from `Data/App/chapters.json`.
@@ -63,13 +74,18 @@ enum SituationProgress: Equatable {
 
 struct Character: Identifiable, Hashable {
   let id: UUID
+  /// Stable ID from `characters.json`. A generated image cache is not proof
+  /// that the learner has created this character; a saved Character is.
+  var templateID: String?
   var name: String
   var situationTitle: String
+  var gender: String
   var vibe: String
   var hair: String
   var accessory: String
   var color: Color
   var avatar: String
+  var avatarImageData: Data?
 }
 
 struct ChatSession: Identifiable {

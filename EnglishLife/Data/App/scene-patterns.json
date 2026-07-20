@@ -1,0 +1,4 @@
+{
+  "characterPattern": ["barista-alex", "guide-jamie", "vendor-taylor", "barista-alex", "vendor-taylor", "guide-jamie", "guide-jamie", "vendor-taylor", "barista-alex", "neighbor-anna"],
+  "locationPattern": ["coffee-shop", "apartment-entry", "apartment-kitchen", "city-park", "community-lounge", "recycling-area", "city-street", "supermarket", "apartment-living-room", "coffee-shop"]
+}

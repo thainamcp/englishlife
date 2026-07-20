@@ -20,18 +20,31 @@ enum VoiceConversationState: Equatable {
 @MainActor
 final class VoiceConversationViewModel: ObservableObject {
   @Published private(set) var state: VoiceConversationState = .idle
+  let modelName = OpenAIModel.realtimeVoice
+  private var wantsToListen = false
 
   func toggleListening() async {
-    guard state != .listening else {
-      state = .idle
-      return
-    }
+    if state == .listening { stopListening() } else { await startListening() }
+  }
+
+  func startListening() async {
+    guard state != .listening else { return }
+    wantsToListen = true
     state = .requestingPermission
     let granted = await withCheckedContinuation { continuation in
       AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
     }
+    guard wantsToListen else {
+      state = .idle
+      return
+    }
     state = granted ? .listening : .unavailable
   }
 
-  func stop() { state = .idle }
+  func stopListening() {
+    wantsToListen = false
+    if state != .unavailable { state = .idle }
+  }
+
+  func stop() { stopListening() }
 }
