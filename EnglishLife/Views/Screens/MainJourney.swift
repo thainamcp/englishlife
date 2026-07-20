@@ -12,8 +12,8 @@ struct MainTabView: View {
         }
 
       MainTabBar(selection: $state.selectedTab)
-        .padding(.horizontal, 24)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 70)
+        .padding(.bottom, -12)
     }
     .background(ThemeApp.Colors.canvas)
   }
@@ -43,6 +43,10 @@ private struct MainTabBar: View {
   var body: some View {
     GeometryReader { proxy in
       let itemWidth = proxy.size.width / CGFloat(items.count)
+      let isFirstTab = selection == 0
+      let isLastTab = selection == items.count - 1
+      let selectedWidth = itemWidth - (isFirstTab || isLastTab ? 3 : 0)
+      let selectedOffset = itemWidth * CGFloat(selection) + (isFirstTab ? 3 : 0)
 
       ZStack(alignment: .leading) {
         Capsule()
@@ -50,8 +54,8 @@ private struct MainTabBar: View {
 
         Capsule()
           .fill(Color(hex: "#FFE900"))
-          .frame(width: itemWidth, height: proxy.size.height)
-          .offset(x: itemWidth * CGFloat(selection))
+          .frame(width: selectedWidth, height: proxy.size.height - 6)
+          .offset(x: selectedOffset)
           .animation(.spring(response: 0.28, dampingFraction: 0.82), value: selection)
 
         HStack(spacing: 0) {
@@ -59,12 +63,11 @@ private struct MainTabBar: View {
             Button {
               selection = index
             } label: {
-              VStack(spacing: 4) {
+              VStack(spacing: 1) {
                 Image(systemName: item.icon)
-                  .font(.system(size: 30, weight: .bold))
-                  .frame(height: 34)
+                  .font(.system(size: 17, weight: .bold))
                 Text(item.title)
-                  .font(ThemeApp.Fonts.ctaButton(size: 17))
+                  .font(ThemeApp.Fonts.tabLabel())
               }
               .foregroundStyle(
                 index == selection ? ThemeApp.Colors.textPrimary : Color.white
@@ -78,7 +81,7 @@ private struct MainTabBar: View {
       }
       .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
     }
-    .frame(height: 76)
+    .frame(height: 60)
   }
 }
 
@@ -138,43 +141,54 @@ struct UserProfileView: View {
 struct MapView: View {
   @EnvironmentObject private var state: AppViewModel
   @StateObject private var viewModel = MapViewModel()
+  @State private var chapterIndex = 0
+
   var body: some View {
     ZStack {
       AdventureBackground()
-      ScrollView(showsIndicators: false) {
-        VStack(alignment: .leading, spacing: 18) {
-          HStack {
-            VStack(alignment: .leading) {
-              Text("English").font(ThemeApp.Fonts.gameTitle(size: 29))
-              Text("Hi, \(state.learnerName) · \(state.level.rawValue)").font(
-                ThemeApp.Fonts.bodyText(size: 14)
-              ).foregroundStyle(ThemeApp.Colors.textSecondary)
+
+      VStack(spacing: 0) {
+        MapHeader()
+          .padding(.horizontal, 20)
+          .padding(.top, 12)
+          .padding(.bottom, 10)
+
+        if let chapter = selectedChapter {
+          MapChapterNavigator(
+            chapter: chapter,
+            index: chapterIndex,
+            count: state.chapters.count,
+            previous: { changeChapter(by: -1) },
+            next: { changeChapter(by: 1) }
+          )
+          .padding(.horizontal, 20)
+          .padding(.bottom, 8)
+
+          ScrollView(showsIndicators: false) {
+            RoadMap(chapter: chapter, situations: state.situations) {
+              viewModel.select($0, using: state)
             }
-            Spacer()
-            Image(systemName: "star.fill").foregroundStyle(ThemeApp.Colors.roadmapLine).font(
-              .title2)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
           }
-          Text("Complete each situation to unlock the next stop.").font(ThemeApp.Fonts.bodyText())
-            .foregroundStyle(ThemeApp.Colors.textSecondary)
-          RoadMap(chapters: state.chapters, situations: state.situations) {
-            viewModel.select($0, using: state)
-          }
-          GlassCard {
-            HStack {
-              Image(systemName: "flame.fill").font(.title2).foregroundStyle(
-                ThemeApp.Colors.roadmapLine)
-              VStack(alignment: .leading) {
-                Text("Your streak").font(ThemeApp.Fonts.bodyText())
-                Text("Start a conversation today!").font(ThemeApp.Fonts.bodyText(size: 13))
-                  .foregroundStyle(ThemeApp.Colors.textSecondary)
-              }
-              Spacer()
-              Text("0 days").font(ThemeApp.Fonts.ctaButton(size: 14))
-            }
-          }
-        }.foregroundStyle(ThemeApp.Colors.textPrimary).padding(20).padding(.bottom, 16)
+        } else {
+          Spacer()
+          ProgressView()
+            .tint(ThemeApp.Colors.primary)
+          Spacer()
+        }
+      }
+
+      if let situation = viewModel.goalSituation {
+        GoalPreviewOverlay(
+          situation: situation,
+          start: { viewModel.begin(situation, using: state) }
+        )
+        .zIndex(1)
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
       }
     }
+    .animation(.easeInOut(duration: 0.18), value: viewModel.goalSituation)
     .sheet(item: $viewModel.selectedSituation) { SituationCardView(situation: $0) }
     .fullScreenCover(item: $state.activeChatSession) { session in
       SituationChatView(character: session.character, situation: session.situation) {
@@ -185,24 +199,251 @@ struct MapView: View {
     .task {
       await state.ensureStudyPath()
       viewModel.restoreCurrentSituation(using: state, situations: state.situations)
+      restoreSelectedChapter()
     }
+    .onChange(of: state.chapters.count) { _, _ in clampChapterIndex() }
+  }
+
+  private var selectedChapter: AdventureChapter? {
+    guard state.chapters.indices.contains(chapterIndex) else { return nil }
+    return state.chapters[chapterIndex]
+  }
+
+  private func changeChapter(by offset: Int) {
+    let newIndex = chapterIndex + offset
+    guard state.chapters.indices.contains(newIndex) else { return }
+    withAnimation(.easeInOut(duration: 0.2)) {
+      chapterIndex = newIndex
+    }
+  }
+
+  private func clampChapterIndex() {
+    guard !state.chapters.isEmpty else {
+      chapterIndex = 0
+      return
+    }
+    chapterIndex = min(max(chapterIndex, 0), state.chapters.count - 1)
+  }
+
+  private func restoreSelectedChapter() {
+    clampChapterIndex()
+
+    guard
+      let resumeSituation = state.situationToResume(from: state.situations),
+      let resumeChapterIndex = state.chapters.firstIndex(where: {
+        resumeSituation.chapter.hasPrefix("Chapter \($0.id)")
+      })
+    else {
+      return
+    }
+
+    chapterIndex = resumeChapterIndex
   }
 }
 
 struct RoadMap: View {
-  @EnvironmentObject private var state: AppViewModel
-  let chapters: [AdventureChapter]
+  let chapter: AdventureChapter
   let situations: [Situation]
   let select: (Situation) -> Void
+
   var body: some View {
-    VStack(spacing: 16) {
-      ForEach(chapters) { chapter in
-        ChapterRoadmapCard(
-          chapter: chapter,
-          situations: situations.filter { $0.chapter.hasPrefix("Chapter \(chapter.id)") },
-          select: select)
+    ChapterMapRoad(
+      situations: situations.filter { $0.chapter.hasPrefix("Chapter \(chapter.id)") },
+      select: select)
+  }
+}
+
+private struct MapHeader: View {
+  var body: some View {
+    HStack(spacing: 12) {
+      Circle()
+        .fill(ThemeApp.Colors.border)
+        .frame(width: 44, height: 44)
+
+      Text("ENGLISH LIFE")
+        .font(ThemeApp.Fonts.gameTitle(size: 24))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+
+      Spacer()
+
+      ZStack {
+        Circle().fill(Color(hex: "#F48B8A"))
+        Circle().fill(ThemeApp.Colors.border).frame(width: 22, height: 22)
+      }
+      .frame(width: 44, height: 44)
+      .overlay(Circle().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+    }
+  }
+}
+
+private struct ChapterMapRoad: View {
+  @EnvironmentObject private var state: AppViewModel
+  let situations: [Situation]
+  let select: (Situation) -> Void
+
+  private let offsets: [CGFloat] = [0, 74, 34, -68, 4, 68, 28, -44, 44, -58]
+
+  var body: some View {
+    let currentSituationID = situations.first(where: { state.progress(for: $0) == .available })?.id
+
+    VStack(spacing: 0) {
+      ForEach(Array(situations.enumerated()), id: \.element.id) { index, situation in
+        MapRoadNode(
+          situation: situation,
+          progress: state.progress(for: situation),
+          showsStartBadge: situation.id == currentSituationID,
+          horizontalOffset: offsets[index % offsets.count],
+          select: select
+        )
       }
     }
+    .frame(maxWidth: .infinity)
+  }
+}
+
+private struct MapRoadNode: View {
+  let situation: Situation
+  let progress: SituationProgress
+  let showsStartBadge: Bool
+  let horizontalOffset: CGFloat
+  let select: (Situation) -> Void
+
+  var body: some View {
+    VStack(spacing: 2) {
+      if showsStartBadge {
+        StartCallout()
+      }
+
+      Button {
+        guard progress != .locked else { return }
+        select(situation)
+      } label: {
+        MapNodeMarker(progress: progress)
+      }
+      .buttonStyle(.plain)
+      .disabled(progress == .locked)
+    }
+    .frame(maxWidth: .infinity)
+    .frame(height: showsStartBadge ? 130 : 108)
+    .offset(x: horizontalOffset)
+  }
+}
+
+private struct StartCallout: View {
+  var body: some View {
+    Image("start_badge")
+      .resizable()
+      .scaledToFit()
+      .frame(width: 82, height: 55)
+  }
+}
+
+private struct MapNodeMarker: View {
+  let progress: SituationProgress
+
+  var body: some View {
+    ZStack {
+      Image(progress == .locked ? "situation_lock" : "situation_unlock")
+        .resizable()
+        .scaledToFit()
+        .frame(width: 70, height: 65)
+
+      if progress != .locked {
+        Image(systemName: "star.fill")
+          .font(.system(size: 30, weight: .bold))
+          .foregroundStyle(.white)
+      }
+    }
+    .frame(width: 70, height: 65)
+  }
+}
+
+private struct GoalPreviewOverlay: View {
+  let situation: Situation
+  let start: () -> Void
+
+  var body: some View {
+    VStack {
+      VStack(spacing: 6) {
+        Text("Goal")
+          .font(ThemeApp.Fonts.gameTitle(size: 30))
+          .foregroundStyle(Color(hex: "#2D7740"))
+
+        Text("“\(situation.title)”")
+          .font(ThemeApp.Fonts.bodyText(size: 19))
+          .foregroundStyle(ThemeApp.Colors.textSecondary)
+          .multilineTextAlignment(.center)
+          .lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true)
+
+        Button(action: start) {
+          Text("Ready to play")
+            .font(ThemeApp.Fonts.ctaButton(size: 16))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .background(ThemeApp.Colors.primary, in: Capsule())
+        }
+        .buttonStyle(.plain)
+      }
+      .padding(.horizontal, 28)
+      .frame(maxWidth: .infinity)
+      .frame(height: 169)
+      .background(ThemeApp.Colors.primaryLight, in: RoundedRectangle(cornerRadius: 32))
+      .overlay(
+        RoundedRectangle(cornerRadius: 32).stroke(ThemeApp.Colors.border, lineWidth: 1.5)
+      )
+      .padding(.horizontal, 42)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
+private struct MapChapterNavigator: View {
+  let chapter: AdventureChapter?
+  let index: Int
+  let count: Int
+  let previous: () -> Void
+  let next: () -> Void
+
+  var body: some View {
+    HStack(spacing: 14) {
+      navigationButton(icon: "chevron.left", enabled: index > 0, action: previous)
+
+      VStack(alignment: .leading, spacing: 3) {
+        Text("CHAPTER \(index + 1)/\(count)")
+          .font(ThemeApp.Fonts.ctaButton(size: 14))
+        Text(chapter?.title ?? "Building your path")
+          .font(ThemeApp.Fonts.bodyText(size: 17))
+          .lineLimit(1)
+      }
+      .foregroundStyle(.white)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 20)
+      .frame(height: 62)
+      .background(Color(hex: "#75BF20"), in: RoundedRectangle(cornerRadius: 24))
+      .overlay(
+        RoundedRectangle(cornerRadius: 24).stroke(ThemeApp.Colors.border, lineWidth: 1.5)
+      )
+
+      navigationButton(icon: "chevron.right", enabled: index < count - 1, action: next)
+    }
+  }
+
+  private func navigationButton(icon: String, enabled: Bool, action: @escaping () -> Void)
+    -> some View
+  {
+    Button(action: action) {
+      Image(systemName: icon)
+        .font(.title3.weight(.bold))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+        .frame(width: 42, height: 42)
+        .background(Color(hex: "#F48B8A"), in: Circle())
+        .overlay(Circle().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+    }
+    .buttonStyle(.plain)
+    .disabled(!enabled)
+    .opacity(enabled ? 1 : 0.35)
   }
 }
 
@@ -366,86 +607,36 @@ struct SituationCardView: View {
   @State private var showsCharacterSetup = false
   private var progress: SituationProgress { state.progress(for: situation) }
   private var existingCharacter: Character? { state.character(for: situation) }
+
   var body: some View {
     NavigationStack {
       ZStack {
         AdventureBackground()
-        VStack(alignment: .leading, spacing: 20) {
-          HStack {
-            Image(systemName: situation.icon).font(.largeTitle.weight(.black)).foregroundStyle(
-              situation.color)
-            Spacer()
-            Button("Close") { dismiss() }.font(ThemeApp.Fonts.bodyText(size: 14)).foregroundStyle(
-              ThemeApp.Colors.textPrimary)
-          }
-          Text(situation.chapter).font(ThemeApp.Fonts.bodyText(size: 13)).foregroundStyle(
-            ThemeApp.Colors.roadmapLine)
-          Text(situation.title).font(ThemeApp.Fonts.gameTitle(size: 32)).foregroundStyle(
-            ThemeApp.Colors.textPrimary)
-          Text(situation.subtitle).font(ThemeApp.Fonts.bodyText()).foregroundStyle(
-            ThemeApp.Colors.textSecondary)
-          Label(situation.locationName, systemImage: "mappin.and.ellipse")
-            .font(ThemeApp.Fonts.bodyText(size: 13))
-            .foregroundStyle(ThemeApp.Colors.primary)
-          GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-              Label("Your AI welcome", systemImage: "sparkles")
-                .font(ThemeApp.Fonts.ctaButton(size: 15))
-                .foregroundStyle(ThemeApp.Colors.roadmapLine)
-              if narrativeViewModel.isLoading {
-                HStack(spacing: 9) {
-                  ProgressView().tint(ThemeApp.Colors.roadmapLine)
-                  Text("Creating your personalized mission…")
-                }
-                .font(ThemeApp.Fonts.bodyText(size: 14))
-                .foregroundStyle(ThemeApp.Colors.textSecondary)
-              } else if let errorMessage = narrativeViewModel.errorMessage {
-                Text(errorMessage)
-                  .font(ThemeApp.Fonts.bodyText(size: 13))
+        VStack(spacing: 0) {
+          missionHeader
+            .padding(.horizontal, 22)
+            .padding(.top, 20)
+            .padding(.bottom, 18)
+
+          ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 26) {
+              VStack(alignment: .leading, spacing: 8) {
+                Text(situation.title)
+                  .font(ThemeApp.Fonts.gameTitle(size: 30))
+                  .foregroundStyle(ThemeApp.Colors.textPrimary)
+                Text(situation.subtitle)
+                  .font(ThemeApp.Fonts.bodyText(size: 17))
                   .foregroundStyle(ThemeApp.Colors.textSecondary)
-                Button("Try again") {
-                  Task { await narrativeViewModel.requestGuidance() }
-                }
-                .font(ThemeApp.Fonts.ctaButton(size: 13))
-                .foregroundStyle(ThemeApp.Colors.primary)
-              } else {
-                Text(narrativeViewModel.guidance)
-                  .font(ThemeApp.Fonts.bodyText(size: 14))
-                  .foregroundStyle(ThemeApp.Colors.textPrimary.opacity(0.86))
-                  .multilineTextAlignment(.leading)
-                  .lineLimit(nil)
-                  .fixedSize(horizontal: false, vertical: true)
               }
+
+              aiGuideCard
+              keywordCard
             }
+            .padding(.horizontal, 22)
+            .padding(.bottom, 18)
           }
-          GlassCard {
-            VStack(alignment: .leading, spacing: 14) {
-              Label("Mission keywords", systemImage: "checkmark.seal.fill").font(
-                ThemeApp.Fonts.ctaButton(size: 15)
-              )
-              .foregroundStyle(ThemeApp.Colors.textPrimary)
-              if narrativeViewModel.isLoading {
-                KeywordLoadingGrid()
-              } else if let errorMessage = narrativeViewModel.errorMessage {
-                Label("Keywords will appear after retrying.", systemImage: "arrow.clockwise")
-                  .font(ThemeApp.Fonts.bodyText(size: 13))
-                  .foregroundStyle(ThemeApp.Colors.textSecondary)
-                  .accessibilityLabel(errorMessage)
-              } else {
-                MissionKeywordGrid(tags: narrativeViewModel.context?.targetKeywords ?? [])
-              }
-              Divider().overlay(ThemeApp.Colors.border)
-              Label(
-                "+\(situation.reward) EXP · Unlock \(situation.unlock)", systemImage: "gift.fill"
-              ).font(ThemeApp.Fonts.bodyText(size: 14)).foregroundStyle(
-                ThemeApp.Colors.textSecondary)
-            }
-          }
-          Spacer()
-          GameButton(
-            title: buttonTitle,
-            icon: buttonIcon
-          ) {
+
+          MissionPrimaryButton(title: missionButtonTitle, icon: missionButtonIcon) {
             guard let character = existingCharacter else {
               showsCharacterSetup = true
               return
@@ -460,8 +651,12 @@ struct SituationCardView: View {
           )
           .opacity(
             narrativeViewModel.isLoading || (existingCharacter != nil && sceneViewModel.isPreparing)
-              ? 0.58 : 1)
-        }.padding(24)
+              ? 0.58 : 1
+          )
+          .padding(.horizontal, 30)
+          .padding(.top, 12)
+          .padding(.bottom, 14)
+        }
       }
       .task {
         narrativeViewModel.configure(
@@ -478,16 +673,163 @@ struct SituationCardView: View {
         CharacterSetupNameView(situation: situation, onHome: { dismiss() })
       }
     }
+    .presentationDetents([.large])
   }
 
-  private var buttonTitle: String {
-    if existingCharacter == nil { return "Create \(situation.characterName)" }
+  private var missionHeader: some View {
+    ZStack {
+      Text("Mission")
+        .font(ThemeApp.Fonts.gameTitle(size: 27))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+
+      HStack {
+        Spacer()
+        Button {
+          dismiss()
+        } label: {
+          Image(systemName: "xmark")
+            .font(.title3.weight(.bold))
+            .foregroundStyle(ThemeApp.Colors.textPrimary)
+            .frame(width: 42, height: 42)
+            .background(Color(hex: "#F48B8A"), in: Circle())
+            .overlay(Circle().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+      }
+    }
+  }
+
+  private var aiGuideCard: some View {
+    MissionPanel {
+      VStack(alignment: .leading, spacing: 8) {
+        Label("Your AI Guide", systemImage: "sparkles")
+          .font(ThemeApp.Fonts.ctaButton(size: 18))
+          .foregroundStyle(ThemeApp.Colors.primary)
+
+        if narrativeViewModel.isLoading {
+          HStack(spacing: 9) {
+            ProgressView().tint(ThemeApp.Colors.primary)
+            Text("Creating your personalized mission…")
+          }
+          .font(ThemeApp.Fonts.bodyText(size: 14))
+          .foregroundStyle(ThemeApp.Colors.textSecondary)
+        } else if let errorMessage = narrativeViewModel.errorMessage {
+          Text(errorMessage)
+            .font(ThemeApp.Fonts.bodyText(size: 13))
+            .foregroundStyle(ThemeApp.Colors.textSecondary)
+          Button("Try again") {
+            Task { await narrativeViewModel.requestGuidance() }
+          }
+          .font(ThemeApp.Fonts.ctaButton(size: 13))
+          .foregroundStyle(ThemeApp.Colors.primary)
+        } else {
+          Text(narrativeViewModel.guidance)
+            .font(ThemeApp.Fonts.bodyText(size: 16))
+            .foregroundStyle(ThemeApp.Colors.textPrimary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+    }
+  }
+
+  private var keywordCard: some View {
+    MissionPanel {
+      VStack(alignment: .leading, spacing: 14) {
+        Label("Mission Keywords", systemImage: "checkmark.seal.fill")
+          .font(ThemeApp.Fonts.ctaButton(size: 18))
+          .foregroundStyle(ThemeApp.Colors.textPrimary)
+
+        if narrativeViewModel.isLoading {
+          KeywordLoadingGrid()
+        } else if let errorMessage = narrativeViewModel.errorMessage {
+          Label("Keywords will appear after retrying.", systemImage: "arrow.clockwise")
+            .font(ThemeApp.Fonts.bodyText(size: 13))
+            .foregroundStyle(ThemeApp.Colors.textSecondary)
+            .accessibilityLabel(errorMessage)
+        } else {
+          MissionKeywordPills(tags: narrativeViewModel.context?.targetKeywords ?? [])
+        }
+
+        Divider().overlay(ThemeApp.Colors.border)
+
+        Label(
+          "+\(situation.reward) XP · Unlock \(situation.unlock)",
+          systemImage: "gift.fill"
+        )
+        .font(ThemeApp.Fonts.ctaButton(size: 15))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+  }
+
+  private var missionButtonTitle: String {
+    if existingCharacter == nil { return "Meet your character" }
     return sceneViewModel.isPreparing ? "Preparing your scene…" : "Start speaking"
   }
 
-  private var buttonIcon: String {
-    if existingCharacter == nil { return "person.badge.plus" }
+  private var missionButtonIcon: String {
+    if existingCharacter == nil { return "arrow.right" }
     return sceneViewModel.isPreparing ? "hourglass" : "mic.fill"
+  }
+}
+
+private struct MissionPanel<Content: View>: View {
+  let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    content
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(26)
+      .background(ThemeApp.Colors.surface, in: RoundedRectangle(cornerRadius: 28))
+      .overlay(RoundedRectangle(cornerRadius: 28).stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+  }
+}
+
+private struct MissionPrimaryButton: View {
+  let title: String
+  let icon: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 10) {
+        Text(title)
+        Image(systemName: icon)
+      }
+      .font(ThemeApp.Fonts.ctaButton(size: 18))
+      .foregroundStyle(.white)
+      .frame(maxWidth: .infinity)
+      .frame(height: 64)
+      .background(ThemeApp.Colors.primary, in: Capsule())
+      .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+private struct MissionKeywordPills: View {
+  let tags: [String]
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 10) {
+        ForEach(tags, id: \.self) { tag in
+          Text(tag)
+            .font(ThemeApp.Fonts.bodyText(size: 14))
+            .foregroundStyle(ThemeApp.Colors.textPrimary)
+            .lineLimit(1)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(Color.white, in: Capsule())
+            .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+        }
+      }
+    }
   }
 }
 

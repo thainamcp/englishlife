@@ -35,6 +35,10 @@ struct ThemeApp {
     static func ctaButton(size: CGFloat = 18) -> Font {
       .system(size: size, weight: .bold)
     }
+
+    static func tabLabel(size: CGFloat = 10) -> Font {
+      .system(size: size, weight: .medium)
+    }
   }
 
   struct Radius {
