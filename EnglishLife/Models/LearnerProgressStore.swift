@@ -10,6 +10,7 @@ struct LearnerProgressStore {
     static let resumeSituationID = "resumeSituationID"
     static let characters = "savedCharacters"
     static let studyPath = "learnerStudyPath"
+    static let vocabulary = "learnerVocabulary"
   }
 
   struct Snapshot {
@@ -18,6 +19,7 @@ struct LearnerProgressStore {
     var resumeSituationID: String?
     var characters: [Character]
     var studyPath: StudyPathDefinition?
+    var vocabulary: [VocabularyWord]
   }
 
   private struct SavedCharacter: Codable {
@@ -44,6 +46,7 @@ struct LearnerProgressStore {
       (defaults.object(forKey: Key.resumeSituationID) as? String)
       ?? (defaults.object(forKey: Key.resumeSituationID) as? Int).map(String.init)
     let savedCharacters = decodeCharacters(defaults.data(forKey: Key.characters))
+    let vocabulary = decodeVocabulary(defaults.data(forKey: Key.vocabulary))
     let studyPath: StudyPathDefinition?
     if let data = defaults.data(forKey: Key.studyPath) {
       studyPath = try? JSONDecoder().decode(StudyPathDefinition.self, from: data)
@@ -56,7 +59,8 @@ struct LearnerProgressStore {
       completedSituationIDs: completed,
       resumeSituationID: resumeID,
       characters: savedCharacters.map(makeCharacter),
-      studyPath: studyPath)
+      studyPath: studyPath,
+      vocabulary: vocabulary)
   }
 
   static func save(
@@ -65,6 +69,7 @@ struct LearnerProgressStore {
     resumeSituationID: String?,
     characters: [Character],
     studyPath: StudyPathDefinition?,
+    vocabulary: [VocabularyWord],
     using defaults: UserDefaults = .standard
   ) {
     defaults.set(level.rawValue, forKey: Key.level)
@@ -85,6 +90,7 @@ struct LearnerProgressStore {
         avatar: $0.avatar, avatarImageData: $0.avatarImageData)
     }
     defaults.set(try? JSONEncoder().encode(saved), forKey: Key.characters)
+    defaults.set(try? JSONEncoder().encode(vocabulary), forKey: Key.vocabulary)
     if let studyPath {
       defaults.set(try? JSONEncoder().encode(studyPath), forKey: Key.studyPath)
     } else {
@@ -95,6 +101,11 @@ struct LearnerProgressStore {
   private static func decodeCharacters(_ data: Data?) -> [SavedCharacter] {
     guard let data else { return [] }
     return (try? JSONDecoder().decode([SavedCharacter].self, from: data)) ?? []
+  }
+
+  private static func decodeVocabulary(_ data: Data?) -> [VocabularyWord] {
+    guard let data else { return [] }
+    return (try? JSONDecoder().decode([VocabularyWord].self, from: data)) ?? []
   }
 
   private static func makeCharacter(_ saved: SavedCharacter) -> Character {

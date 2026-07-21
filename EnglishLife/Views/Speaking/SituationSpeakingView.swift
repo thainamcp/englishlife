@@ -1,0 +1,634 @@
+import SwiftUI
+import UIKit
+
+/// Situation mode is a voice-only game scene, opened from the roadmap.
+struct SituationChatView: View {
+  @EnvironmentObject private var app: AppViewModel
+  @Environment(\.dismiss) private var dismiss
+  let character: Character
+  let situation: Situation?
+  var onHome: () -> Void = {}
+  @StateObject private var viewModel = ChatViewModel()
+  @StateObject private var voiceViewModel = VoiceConversationViewModel()
+  @StateObject private var sceneViewModel = SituationSceneViewModel()
+
+  var body: some View {
+    ZStack(alignment: .bottom) {
+      VStack(spacing: 0) {
+        sceneHeader
+
+        SituationDialogueCard(
+          message: latestCharacterMessage?.text ?? initialDialogue
+        )
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+
+        Color.clear.frame(height: 16)
+
+        SceneCharacterPortrait(
+          character: character,
+          imageData: sceneViewModel.characterImageData
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 18)
+        .offset(y: -50)
+
+        Spacer(minLength: 0)
+
+        if let latestLearnerMessage {
+          LearnerDialogueBubble(message: latestLearnerMessage)
+            .padding(.horizontal, 28)
+            .padding(.bottom, 156)
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+      SceneMicrophoneControl(state: voiceViewModel.state) {
+        Task {
+          await voiceViewModel.toggleSession(
+            character: character,
+            situation: situation,
+            learnerName: app.learnerName
+          )
+        }
+      }
+      .padding(.bottom, 48)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .foregroundStyle(ThemeApp.Colors.textPrimary)
+    .background {
+      if situation == nil {
+        MainTabBackground()
+          .ignoresSafeArea()
+      } else {
+        SituationGameBackground(
+          imageData: sceneViewModel.backgroundImageData,
+          assetName: situation?.locationBackgroundAsset
+        )
+        .ignoresSafeArea()
+      }
+    }
+    .ignoresSafeArea()
+    .sheet(isPresented: $viewModel.showsRequirements) {
+      if let situation {
+        RequirementView(
+          situation: situation,
+          achievedKeywords: achievedKeywords,
+          onComplete: { viewModel.complete(situation, using: app) }
+        )
+      }
+    }
+    .sheet(isPresented: $viewModel.showsCompletion) {
+      if let situation { MissionCompleteView(situation: situation, onHome: returnHome) }
+    }
+    .toolbar(.hidden, for: .navigationBar)
+    .toolbar(.hidden, for: .tabBar)
+    .task {
+      if let situation {
+        await sceneViewModel.prepare(for: situation, character: character)
+      }
+    }
+  }
+
+  private var sceneHeader: some View {
+    ZStack {
+      HStack {
+        Button(action: returnHome) {
+          Image(systemName: "chevron.left")
+            .font(.body.weight(.black))
+            .foregroundStyle(ThemeApp.Colors.textDark)
+            .frame(width: 42, height: 42)
+            .background(Color(hex: "#F48B8A"), in: Circle())
+            .overlay(Circle().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+
+        Spacer()
+
+        if situation != nil {
+          Button {
+            viewModel.showsRequirements = true
+          } label: {
+            Image(systemName: "slider.horizontal.3")
+              .font(.title3.weight(.bold))
+              .foregroundStyle(ThemeApp.Colors.textPrimary)
+              .frame(width: 42, height: 42)
+              .background(Color(hex: "#F48B8A"), in: Circle())
+              .overlay(Circle().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+          }
+          .buttonStyle(.plain)
+        } else {
+          Color.clear.frame(width: 42, height: 42)
+        }
+      }
+
+      Text(situation?.title ?? "Talk with \(character.name)")
+        .font(.system(size: 18, weight: .bold, design: .rounded))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: 250)
+        .frame(height: 34)
+        .background(Color(hex: "#FFE900"), in: Capsule())
+        .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+    }
+    .padding(.horizontal, 20)
+    .padding(.top, 78)
+    .padding(.bottom, 2)
+  }
+
+  private func returnHome() {
+    app.selectedTab = situation == nil ? 1 : 0
+    onHome()
+    dismiss()
+  }
+
+  private var initialDialogue: String {
+    if situation == nil {
+      return "Hi, I’m \(character.name). What would you like to talk about today?"
+    }
+    return situation?.story ?? "Tap the microphone to begin."
+  }
+
+  private var latestCharacterMessage: VoiceTranscript? {
+    voiceViewModel.transcript.last(where: { $0.speaker == .character })
+  }
+
+  private var latestLearnerMessage: VoiceTranscript? {
+    voiceViewModel.transcript.last(where: { $0.speaker == .learner })
+  }
+
+  private var achievedKeywords: Set<String> {
+    guard let situation else { return [] }
+    let learnerSpeech = voiceViewModel.transcript
+      .filter { $0.speaker == .learner }
+      .map(\.text)
+      .joined(separator: " ")
+      .lowercased()
+    return Set(
+      situation.goals.filter { keyword in
+        learnerSpeech.contains(keyword.lowercased())
+      }
+    )
+  }
+}
+
+private struct SituationDialogueCard: View {
+  let message: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Text(message)
+        .font(ThemeApp.Fonts.bodyText(size: 18))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+        .frame(maxWidth: .infinity, minHeight: 145, alignment: .topLeading)
+        .padding(16)
+        .background(ThemeApp.Colors.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(
+          RoundedRectangle(cornerRadius: 16)
+            .stroke(ThemeApp.Colors.border, lineWidth: 1.5)
+        )
+
+      CharacterDialogueTail()
+        .fill(ThemeApp.Colors.surface)
+        .frame(width: 30, height: 18)
+        .overlay(
+          CharacterDialogueTail()
+            .stroke(ThemeApp.Colors.border, lineWidth: 1.5)
+        )
+        .padding(.leading, 70)
+        .offset(y: -1)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+private struct CharacterDialogueTail: Shape {
+  func path(in rect: CGRect) -> Path {
+    var path = Path()
+    path.move(to: CGPoint(x: 0, y: 0))
+    path.addLine(to: CGPoint(x: rect.width, y: 0))
+    path.addLine(to: CGPoint(x: rect.width * 0.32, y: rect.height))
+    path.closeSubpath()
+    return path
+  }
+}
+
+private struct SceneCharacterPortrait: View {
+  let character: Character
+  let imageData: Data?
+
+  var body: some View {
+    Group {
+      if let portraitData = imageData ?? character.avatarImageData,
+        let image = UIImage(data: portraitData)
+      {
+        Image(uiImage: image)
+          .resizable()
+          .scaledToFit()
+      } else {
+        AvatarView(character: character, size: 270)
+      }
+    }
+    .frame(width: 270, height: 450, alignment: .bottom)
+    .shadow(color: Color.black.opacity(0.22), radius: 12, y: 7)
+  }
+}
+
+private struct SceneMicrophoneControl: View {
+  let state: VoiceConversationState
+  let action: () -> Void
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Button(action: action) {
+        ZStack {
+          Circle()
+            .fill(ThemeApp.Colors.primary)
+          Image(systemName: microphoneSymbol)
+            .font(.system(size: state.isLive ? 34 : 39, weight: .bold))
+            .foregroundStyle(.white)
+        }
+        .frame(width: 108, height: 108)
+        .overlay(Circle().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
+      }
+      .buttonStyle(.plain)
+
+      Text(microphoneHint)
+        .font(.system(size: 14, weight: .regular, design: .rounded))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+        .multilineTextAlignment(.center)
+        .lineLimit(2)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(Color(hex: "#FFE900"), in: Capsule())
+    }
+  }
+
+  private var microphoneSymbol: String {
+    switch state {
+    case .connecting, .requestingPermission:
+      "ellipsis"
+    case .listening:
+      "waveform"
+    case .speaking:
+      "speaker.wave.2.fill"
+    case .idle, .unavailable, .failed:
+      "mic.fill"
+    }
+  }
+
+  private var microphoneHint: String {
+    switch state {
+    case .idle:
+      "Tap the microphone to speak"
+    case .requestingPermission:
+      "Allow microphone access to begin"
+    case .connecting:
+      "Connecting to live voice…"
+    case .listening:
+      "Listening — speak naturally"
+    case .speaking:
+      "Your character is replying…"
+    case .unavailable:
+      "Microphone access is required"
+    case .failed:
+      "Tap the microphone to try again"
+    }
+  }
+}
+
+private struct SituationGameBackground: View {
+  let imageData: Data?
+  let assetName: String?
+
+  var body: some View {
+    Group {
+      if let assetName {
+        Image(assetName).resizable().scaledToFill()
+      } else if let imageData, let image = UIImage(data: imageData) {
+        Image(uiImage: image).resizable().scaledToFill()
+      } else {
+        LinearGradient(
+          colors: [ThemeApp.Colors.riverBlue, ThemeApp.Colors.canvas],
+          startPoint: .top, endPoint: .bottom
+        )
+      }
+    }
+    .clipped()
+    .overlay(Color.black.opacity(0.08))
+    .allowsHitTesting(false)
+  }
+}
+
+private struct SceneCharacterColumn: View {
+  let character: Character
+
+  var body: some View {
+    VStack(spacing: 8) {
+      Group {
+        if let imageData = character.avatarImageData, let image = UIImage(data: imageData) {
+          Image(uiImage: image).resizable().scaledToFit()
+        } else {
+          AvatarView(character: character, size: 118)
+        }
+      }
+      .frame(width: 132, height: 224, alignment: .bottom)
+      .shadow(color: Color.black.opacity(0.25), radius: 13, y: 8)
+      Text(character.name)
+        .font(ThemeApp.Fonts.ctaButton(size: 14))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.9), in: Capsule())
+    }
+  }
+}
+
+private struct LiveDialoguePanel: View {
+  let characterName: String
+  let message: VoiceTranscript?
+  let isListening: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        Text("LIVE DIALOGUE")
+          .font(ThemeApp.Fonts.ctaButton(size: 11))
+          .foregroundStyle(ThemeApp.Colors.primary)
+        Spacer()
+        Circle()
+          .fill(isListening ? ThemeApp.Colors.accentPink : ThemeApp.Colors.primary)
+          .frame(width: 8, height: 8)
+      }
+      if let message {
+        dialogueBubble(text: message.text)
+      } else {
+        Text("Your character will reply after you speak.")
+          .font(ThemeApp.Fonts.bodyText(size: 13))
+          .foregroundStyle(ThemeApp.Colors.textSecondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .frame(maxWidth: .infinity, minHeight: 154, alignment: .topLeading)
+    .padding(14)
+    .background(Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: ThemeApp.Radius.card))
+    .overlay(
+      RoundedRectangle(cornerRadius: ThemeApp.Radius.card).stroke(
+        ThemeApp.Colors.primary, lineWidth: 2)
+    )
+  }
+
+  private func dialogueBubble(text: String) -> some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(characterName.uppercased())
+        .font(ThemeApp.Fonts.ctaButton(size: 11))
+        .foregroundStyle(ThemeApp.Colors.primary)
+      Text(text)
+        .font(ThemeApp.Fonts.bodyText(size: 13))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(10)
+    .background(
+      ThemeApp.Colors.riverBlue.opacity(0.55),
+      in: RoundedRectangle(cornerRadius: ThemeApp.Radius.tag)
+    )
+  }
+}
+
+private struct LearnerDialogueBubble: View {
+  let message: VoiceTranscript
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text("YOU")
+        .font(ThemeApp.Fonts.ctaButton(size: 11))
+        .foregroundStyle(ThemeApp.Colors.accent)
+      Text(message.text)
+        .font(ThemeApp.Fonts.bodyText(size: 14))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(12)
+    .background(
+      Color.white.opacity(0.95),
+      in: RoundedRectangle(cornerRadius: ThemeApp.Radius.card)
+    )
+    .overlay(
+      RoundedRectangle(cornerRadius: ThemeApp.Radius.card).stroke(
+        ThemeApp.Colors.accent,
+        lineWidth: 2
+      )
+    )
+  }
+}
+
+private struct LiveSpeakControl: View {
+  let state: VoiceConversationState
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 12) {
+        Image(systemName: state.isLive ? "waveform" : "mic.fill")
+          .font(.title3.weight(.black))
+          .frame(width: 44, height: 44)
+          .foregroundStyle(ThemeApp.Colors.textDark)
+          .background(ThemeApp.Colors.roadmapLine, in: Circle())
+        VStack(alignment: .leading, spacing: 2) {
+          Text(buttonTitle)
+            .font(ThemeApp.Fonts.ctaButton(size: 17))
+          Text(buttonHint)
+            .font(ThemeApp.Fonts.bodyText(size: 12))
+        }
+        Spacer()
+        Image(systemName: state.isLive ? "stop.fill" : "arrow.up.circle.fill")
+          .font(.title2)
+      }
+      .foregroundStyle(ThemeApp.Colors.textPrimary)
+      .padding(12)
+      .background(
+        Color.white.opacity(0.94), in: RoundedRectangle(cornerRadius: ThemeApp.Radius.button)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: ThemeApp.Radius.button).stroke(
+          state.isLive ? ThemeApp.Colors.roadmapLine : ThemeApp.Colors.primary,
+          lineWidth: 2)
+      )
+      .shadow(color: Color.black.opacity(0.14), radius: 12, y: 6)
+    }
+    .buttonStyle(.plain)
+  }
+
+  private var buttonTitle: String {
+    if state.isLive { return "Live voice is on" }
+    if case .failed = state { return "Try live voice again" }
+    return "Speak"
+  }
+
+  private var buttonHint: String {
+    if state.isLive { return "Speak naturally — your character replies automatically" }
+    if case .failed(let message) = state { return message }
+    return "Tap once to start a live conversation"
+  }
+}
+
+struct MissionCompleteView: View {
+  let situation: Situation
+  let onHome: () -> Void
+  var body: some View {
+    ZStack {
+      AdventureBackground()
+      VStack(spacing: 22) {
+        Spacer()
+        Image(systemName: "checkmark.seal.fill").font(.system(size: 82, weight: .black))
+          .foregroundStyle(ThemeApp.Colors.roadmapLine)
+        Text("Mission complete!").font(ThemeApp.Fonts.gameTitle(size: 32)).foregroundStyle(
+          ThemeApp.Colors.textPrimary)
+        Text("You completed \(situation.title) and earned +\(situation.reward) EXP.").font(
+          ThemeApp.Fonts.bodyText()
+        ).multilineTextAlignment(.center).foregroundStyle(ThemeApp.Colors.textSecondary)
+        GlassCard {
+          VStack(spacing: 8) {
+            Label("New situation unlocked", systemImage: "lock.open.fill").font(
+              ThemeApp.Fonts.ctaButton(size: 15)
+            ).foregroundStyle(ThemeApp.Colors.roadmapLine)
+            Text(situation.unlock).font(ThemeApp.Fonts.gameTitle(size: 22)).foregroundStyle(
+              ThemeApp.Colors.textPrimary)
+          }
+        }
+        GameButton(title: "Back to map", icon: "map.fill", action: onHome)
+        Spacer()
+      }.padding(24)
+    }
+  }
+}
+struct ChatBubble: View {
+  let text: String
+  let mine: Bool
+  var body: some View {
+    HStack {
+      if mine { Spacer(minLength: 45) }
+      Text(text).font(ThemeApp.Fonts.bodyText()).foregroundStyle(ThemeApp.Colors.textPrimary)
+        .padding(14).background(mine ? ThemeApp.Colors.roadmapLine : Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: ThemeApp.Radius.card))
+      if !mine { Spacer(minLength: 45) }
+    }
+  }
+}
+
+struct RequirementView: View {
+  let situation: Situation
+  var achievedKeywords: Set<String> = []
+  let onComplete: () -> Void
+  @EnvironmentObject private var state: AppViewModel
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 18) {
+      requirementHeader
+
+      VStack(alignment: .leading, spacing: 16) {
+        Label("Use these keywords in your\nconversation", systemImage: "text.book.closed.fill")
+          .font(ThemeApp.Fonts.ctaButton(size: 20))
+          .foregroundStyle(ThemeApp.Colors.textPrimary)
+          .fixedSize(horizontal: false, vertical: true)
+
+        VStack(alignment: .leading, spacing: 10) {
+          ForEach(situation.goals, id: \.self) { keyword in
+            RequirementKeywordRow(keyword: keyword, isComplete: isKeywordComplete(keyword))
+          }
+        }
+
+        Divider()
+          .overlay(ThemeApp.Colors.border.opacity(0.7))
+          .padding(.top, 2)
+
+        Label(
+          "Complete all to unlock \(situation.unlock)",
+          systemImage: allKeywordsComplete ? "lock.open.fill" : "lock.fill"
+        )
+        .font(ThemeApp.Fonts.bodyText(size: 16))
+        .foregroundStyle(ThemeApp.Colors.primary)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(24)
+      .background(ThemeApp.Colors.surface, in: RoundedRectangle(cornerRadius: 28))
+      .overlay(
+        RoundedRectangle(cornerRadius: 28)
+          .stroke(ThemeApp.Colors.border, lineWidth: 1.5)
+      )
+
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 20)
+    .padding(.top, 22)
+    .padding(.bottom, 22)
+    .background(ThemeApp.Colors.surface)
+    .presentationDetents([.height(max(560, UIScreen.main.bounds.height - 210))])
+    .presentationDragIndicator(.hidden)
+    .presentationCornerRadius(44)
+  }
+
+  private var requirementHeader: some View {
+    ZStack {
+      Text("Mission check")
+        .font(ThemeApp.Fonts.gameTitle(size: 24))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+
+      HStack {
+        Spacer()
+        Button {
+          if allKeywordsComplete, state.progress(for: situation) == .available {
+            onComplete()
+          } else {
+            dismiss()
+          }
+        } label: {
+          Image(systemName: "checkmark")
+            .font(.title3.weight(.black))
+            .foregroundStyle(ThemeApp.Colors.textPrimary)
+            .frame(width: 42, height: 42)
+            .background(Color(hex: "#F48B8A"), in: Circle())
+            .overlay(Circle().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+        }
+        .buttonStyle(.plain)
+      }
+    }
+  }
+
+  private var allKeywordsComplete: Bool {
+    state.progress(for: situation) == .completed
+      || situation.goals.allSatisfy(isKeywordComplete)
+  }
+
+  private func isKeywordComplete(_ keyword: String) -> Bool {
+    state.progress(for: situation) == .completed || achievedKeywords.contains(keyword)
+  }
+}
+
+private struct RequirementKeywordRow: View {
+  let keyword: String
+  let isComplete: Bool
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Image(systemName: isComplete ? "checkmark.circle.fill" : "circle")
+        .font(.system(size: 17, weight: .semibold))
+        .foregroundStyle(
+          isComplete ? Color(hex: "#75BF20") : ThemeApp.Colors.textPrimary
+        )
+      Text(keyword)
+        .font(ThemeApp.Fonts.bodyText(size: 18))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+      Spacer(minLength: 0)
+    }
+    .frame(minHeight: 28, alignment: .leading)
+  }
+}

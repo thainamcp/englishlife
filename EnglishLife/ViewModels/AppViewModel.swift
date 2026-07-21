@@ -7,6 +7,7 @@ final class AppViewModel: ObservableObject {
   @Published var level: EnglishLevel = .beginner { didSet { persistJourney() } }
   @Published var selectedTab = 0
   @Published var characters: [Character] = [] { didSet { persistJourney() } }
+  @Published private(set) var vocabulary: [VocabularyWord] = [] { didSet { persistJourney() } }
   @Published var activeChatSession: ChatSession?
   @Published private(set) var completedSituationIDs: Set<String> = [] {
     didSet { persistJourney() }
@@ -26,7 +27,9 @@ final class AppViewModel: ObservableObject {
     completedSituationIDs = snapshot.completedSituationIDs
     resumeSituationID = snapshot.resumeSituationID
     characters = snapshot.characters
+    vocabulary = snapshot.vocabulary
     applyStudyPath(snapshot.studyPath)
+    seedVocabulary(from: situations)
   }
 
   func character(for situation: Situation) -> Character? {
@@ -66,6 +69,7 @@ final class AppViewModel: ObservableObject {
   func complete(_ situation: Situation) {
     guard progress(for: situation) == .available else { return }
     completedSituationIDs.insert(situation.id)
+    addVocabulary(vocabularyKeywords(for: situation))
     let nextIndex = situations.firstIndex(where: { $0.id == situation.id }).map { $0 + 1 }
     resumeSituationID = nextIndex.flatMap {
       situations.indices.contains($0) ? situations[$0].id : nil
@@ -74,6 +78,34 @@ final class AppViewModel: ObservableObject {
 
   func startLearning(_ situation: Situation) {
     resumeSituationID = situation.id
+  }
+
+  func addVocabulary(_ words: [String]) {
+    let incoming =
+      words
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    guard !incoming.isEmpty else { return }
+
+    var existingIDs = Set(vocabulary.map(\.id))
+    var updated = vocabulary
+    for word in incoming {
+      let entry = VocabularyWord(word: word)
+      if existingIDs.insert(entry.id).inserted { updated.append(entry) }
+    }
+    vocabulary = updated.sorted {
+      $0.word.localizedCaseInsensitiveCompare($1.word) == .orderedAscending
+    }
+  }
+
+  func deleteVocabulary(ids: Set<String>) {
+    guard !ids.isEmpty else { return }
+    vocabulary.removeAll { ids.contains($0.id) }
+  }
+
+  func saveVocabularyDetail(_ detail: VocabularyWordDetail, for id: String) {
+    guard let index = vocabulary.firstIndex(where: { $0.id == id }) else { return }
+    vocabulary[index].detail = detail
   }
 
   func situationToResume(from situations: [Situation]) -> Situation? {
@@ -96,6 +128,7 @@ final class AppViewModel: ObservableObject {
 
     do {
       applyStudyPath(try await studyPathClient.generate(for: selectedLevel))
+      seedVocabulary(from: situations)
       persistJourney()
     } catch {
       // The bundled content keeps onboarding usable offline; it is not used
@@ -123,12 +156,45 @@ final class AppViewModel: ObservableObject {
     situations = path.situations
   }
 
+  private func seedVocabulary(from situations: [Situation]) {
+    // Each generated situation already includes level-appropriate keyword seeds.
+    // Add the first few unique words so Profile has value before the learner
+    // completes their first mission. `addVocabulary` de-duplicates persisted words.
+    addVocabulary(Array(situations.prefix(5).flatMap(\.goals).prefix(8)))
+  }
+
+  private func vocabularyKeywords(for situation: Situation) -> [String] {
+    let levelTargets: [String]
+    switch level {
+    case .beginner:
+      levelTargets = Array(situation.goals.prefix(2))
+    case .intermediate:
+      levelTargets = Array(situation.goals.prefix(3))
+    case .advanced:
+      levelTargets = situation.goals + ["could you clarify", "just to confirm"]
+    }
+
+    let context = SituationAIContext(
+      userName: learnerName.isEmpty ? "Explorer" : learnerName,
+      level: level.rawValue,
+      situationID: situation.id,
+      situationTitle: situation.title,
+      situationStory: situation.story,
+      targetKeywords: levelTargets,
+      characterGoal:
+        "Guide the learner through \(situation.title) naturally and encourage the target keywords.",
+      welcomeMessage: nil
+    )
+    return SituationGuidanceCache.shared.guidance(for: context)?.keywords ?? levelTargets
+  }
+
   private func persistJourney() {
     LearnerProgressStore.save(
       level: level,
       completedSituationIDs: completedSituationIDs,
       resumeSituationID: resumeSituationID,
       characters: characters,
-      studyPath: studyPathDefinition)
+      studyPath: studyPathDefinition,
+      vocabulary: vocabulary)
   }
 }

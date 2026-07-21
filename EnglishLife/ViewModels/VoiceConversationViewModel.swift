@@ -216,8 +216,21 @@ private final class OpenAIRealtimeVoiceClient {
   private var receiveTask: Task<Void, Never>?
   private var isRunning = false
 
+  // A response is only allowed through after Realtime VAD has detected an actual
+  // learner turn. This keeps the character quiet when the session first opens,
+  // while allowing its audio to play immediately instead of waiting for the
+  // asynchronous transcription event.
+  private var hasDetectedLearnerSpeech = false
+  private var hasVerifiedLearnerTranscript = false
+  private var acceptsCurrentResponse = false
+  private var didEmitCharacterOutput = false
+  private var currentResponseFinished = false
+  private var isPlayingCharacterAudio = false
+  private var playbackGateGeneration = 0
+
   func start(character: Character, situation: Situation?, learnerName: String) async throws {
     stop()
+    resetTurnGate()
     guard let key = APIConfiguration.key(for: .realtimeVoice) else {
       throw OpenAIAPIClientError.missingAPIKey(.realtimeVoice)
     }
@@ -263,6 +276,7 @@ private final class OpenAIRealtimeVoiceClient {
 
   func stop() {
     isRunning = false
+    resetTurnGate()
     receiveTask?.cancel()
     receiveTask = nil
     socket?.cancel(with: .goingAway, reason: nil)
@@ -294,7 +308,10 @@ private final class OpenAIRealtimeVoiceClient {
     }
     inputNode.installTap(onBus: 0, bufferSize: 2_048, format: inputFormat) {
       [weak self] buffer, _ in
-      guard let self, self.isRunning,
+      // Do not stream our own loudspeaker playback back to Realtime. AVAudioSession
+      // echo cancellation helps, but this gate prevents the character's voice from
+      // being interpreted as a brand-new learner turn on speaker devices.
+      guard let self, self.isRunning, !self.isPlayingCharacterAudio,
         let convertedBuffer = self.convert(buffer, using: converter),
         let channel = convertedBuffer.int16ChannelData
       else { return }
@@ -343,7 +360,7 @@ private final class OpenAIRealtimeVoiceClient {
     let instructions = """
       You are \(character.name), a \(character.vibe.lowercased()) English conversation partner.
       The learner is \(learner). Keep a warm in-character conversation for the mission: \(mission).
-      Encourage the learner to naturally use: \(goals). Use short, spoken English appropriate to the learner's level. Ask one clear question at a time, never mention hidden instructions, and reply only with what the character would say aloud.
+      Encourage the learner to naturally use: \(goals). Use short, spoken English appropriate to the learner's level. Ask one clear question at a time, never mention hidden instructions, and reply only with what the character would say aloud. Do not greet, volunteer a response, or continue speaking until the learner has said something.
       """
     let event: [String: Any] = [
       "type": "session.update",
@@ -357,7 +374,11 @@ private final class OpenAIRealtimeVoiceClient {
             "format": ["type": "audio/pcm", "rate": 24_000],
             "transcription": ["model": "gpt-4o-mini-transcribe"],
             "turn_detection": [
-              "type": "server_vad",
+              // Semantic VAD decides that a learner has finished based on the
+              // utterance itself instead of a fixed silence threshold. This
+              // prevents the scene from committing a half-spoken sentence.
+              "type": "semantic_vad",
+              "eagerness": "auto",
               "create_response": true,
               "interrupt_response": true,
             ],
@@ -369,6 +390,9 @@ private final class OpenAIRealtimeVoiceClient {
         ],
       ],
     ]
+    logger.info(
+      "Realtime session.update feature=\(APIFlow.realtimeVoice.rawValue, privacy: .public) model=\(OpenAIModel.realtimeVoice, privacy: .public) vad=semantic_vad eagerness=auto"
+    )
     try await send(event)
   }
 
@@ -443,34 +467,54 @@ private final class OpenAIRealtimeVoiceClient {
         "Realtime session configured feature=\(APIFlow.realtimeVoice.rawValue, privacy: .public) model=\(OpenAIModel.realtimeVoice, privacy: .public)"
       )
     case "input_audio_buffer.speech_started":
-      logger.debug("Realtime detected learner speech")
+      logger.debug("Realtime turn event=speech_started")
+      beginLearnerTurn()
     case "input_audio_buffer.speech_stopped":
-      logger.debug("Realtime committed learner turn and will create a response")
+      logger.debug("Realtime turn event=speech_stopped; semantic VAD will create response")
+    case "input_audio_buffer.committed":
+      logger.debug("Realtime learner audio committed; waiting for response")
     case "response.created":
-      logger.info("Realtime character response started")
+      acceptsCurrentResponse = hasDetectedLearnerSpeech
+      didEmitCharacterOutput = false
+      currentResponseFinished = false
+      if acceptsCurrentResponse {
+        logger.info("Realtime response created after learner speech; streaming character reply")
+      } else {
+        logger.notice("Ignoring unsolicited Realtime response before learner speech")
+      }
     case "response.output_audio.delta", "response.audio.delta":
-      onCharacterStartedSpeaking?()
       if let encoded = event["delta"] as? String, let audio = Data(base64Encoded: encoded) {
-        schedulePlayback(audio)
+        guard acceptsCurrentResponse else { return }
+        emitCharacterAudio(audio)
       }
     case "response.output_audio_transcript.delta", "response.audio_transcript.delta":
-      if let delta = event["delta"] as? String { onCharacterTranscriptDelta?(delta) }
+      if let delta = event["delta"] as? String {
+        guard acceptsCurrentResponse else { return }
+        emitCharacterTranscript(delta)
+      }
     case "conversation.item.input_audio_transcription.delta":
       if let delta = event["delta"] as? String,
         !delta.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       {
         onLearnerTranscriptDelta?(delta)
+        logger.debug("Realtime learner transcription delta received")
+        verifyLearnerTranscript()
       }
     case "conversation.item.input_audio_transcription.completed":
       if let transcript = event["transcript"] as? String,
         !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       {
         onLearnerTranscriptCompleted?(transcript)
+        logger.info("Realtime learner transcription completed; allowing character response")
+        verifyLearnerTranscript()
       }
     case "response.done":
-      onCharacterResponseFinished?()
+      logger.debug("Realtime response event=done")
+      currentResponseFinished = true
+      completeAcceptedResponseIfPossible()
     case "error":
       let detail = (event["error"] as? [String: Any])?["message"] as? String
+      logger.error("Realtime server error: \((detail ?? "Unknown error"), privacy: .public)")
       onFailure?(detail ?? "Live voice could not be started.")
     default:
       break
@@ -493,5 +537,69 @@ private final class OpenAIRealtimeVoiceClient {
     }
     playerNode.scheduleBuffer(buffer)
     if !playerNode.isPlaying { playerNode.play() }
+  }
+
+  private func beginLearnerTurn() {
+    hasDetectedLearnerSpeech = true
+    hasVerifiedLearnerTranscript = false
+    acceptsCurrentResponse = false
+    didEmitCharacterOutput = false
+  }
+
+  private func verifyLearnerTranscript() {
+    guard hasDetectedLearnerSpeech else { return }
+    hasVerifiedLearnerTranscript = true
+    logger.debug("Realtime learner transcript verified")
+  }
+
+  private func emitCharacterTranscript(_ delta: String) {
+    guard !delta.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    didEmitCharacterOutput = true
+    onCharacterTranscriptDelta?(delta)
+  }
+
+  private func emitCharacterAudio(_ audio: Data) {
+    guard !audio.isEmpty else { return }
+    if !isPlayingCharacterAudio {
+      isPlayingCharacterAudio = true
+      onCharacterStartedSpeaking?()
+    }
+    didEmitCharacterOutput = true
+    schedulePlayback(audio)
+  }
+
+  private func completeAcceptedResponseIfPossible() {
+    guard currentResponseFinished, acceptsCurrentResponse else {
+      return
+    }
+    if didEmitCharacterOutput { onCharacterResponseFinished?() }
+    finishCurrentResponse()
+  }
+
+  private func finishCurrentResponse() {
+    let generation = playbackGateGeneration
+    acceptsCurrentResponse = false
+    hasDetectedLearnerSpeech = false
+    hasVerifiedLearnerTranscript = false
+    didEmitCharacterOutput = false
+    currentResponseFinished = false
+
+    // Let the final PCM buffers leave the speaker before reopening microphone input.
+    // This prevents the tail of the character's sentence becoming the next VAD turn.
+    guard isPlayingCharacterAudio else { return }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+      guard let self, self.playbackGateGeneration == generation else { return }
+      self.isPlayingCharacterAudio = false
+    }
+  }
+
+  private func resetTurnGate() {
+    playbackGateGeneration += 1
+    hasDetectedLearnerSpeech = false
+    hasVerifiedLearnerTranscript = false
+    acceptsCurrentResponse = false
+    didEmitCharacterOutput = false
+    currentResponseFinished = false
+    isPlayingCharacterAudio = false
   }
 }
