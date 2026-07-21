@@ -41,7 +41,7 @@ struct MainTabView: View {
             UserProfileView()
         }
     }
-    
+        
     private var selectedTabTitle: String {
         switch state.selectedTab {
         case 0: "MAP"

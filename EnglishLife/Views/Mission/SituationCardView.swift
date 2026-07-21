@@ -226,9 +226,9 @@ private struct MissionKeywordPills: View {
             .foregroundStyle(ThemeApp.Colors.textPrimary)
             .lineLimit(1)
             .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+            .frame(height: 37)
             .background(Color.white, in: Capsule())
-            .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+            .overlay(Capsule().strokeBorder(ThemeApp.Colors.border, lineWidth: 1.5))
         }
       }
     }

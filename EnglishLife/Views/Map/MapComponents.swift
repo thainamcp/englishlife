@@ -117,17 +117,21 @@ struct GoalPreviewOverlay: View {
 
   var body: some View {
     ZStack(alignment: .topTrailing) {
-      VStack(spacing: 14) {
+      VStack(spacing: 10) {
         Text("Goal")
           .font(ThemeApp.Fonts.gameTitle(size: 36))
           .foregroundStyle(Color(hex: "#2D7740"))
+          .frame(height: 42)
 
         Text("“\(situation.title)”")
           .font(ThemeApp.Fonts.bodyText(size: 22))
           .foregroundStyle(ThemeApp.Colors.textSecondary)
           .multilineTextAlignment(.center)
-          .lineLimit(2)
-          .fixedSize(horizontal: false, vertical: true)
+          .lineLimit(1)
+          .minimumScaleFactor(0.5)
+          .allowsTightening(true)
+          .frame(maxWidth: .infinity)
+          .frame(height: 36)
 
         Button(action: start) {
           Text("Ready to Play")
@@ -140,6 +144,7 @@ struct GoalPreviewOverlay: View {
         .buttonStyle(.plain)
       }
       .padding(.horizontal, 32)
+      .padding(.vertical, 15)
       .frame(maxWidth: .infinity)
       .frame(height: 170)
       .background(ThemeApp.Colors.surface, in: RoundedRectangle(cornerRadius: 32))

@@ -86,6 +86,20 @@ struct Character: Identifiable, Hashable {
   var color: Color
   var avatar: String
   var avatarImageData: Data?
+
+  /// A portrait belongs to the learner's customized character, not merely to a
+  /// situation template. Including the selected traits prevents an older Alex
+  /// cache from appearing after the learner renames or changes that character.
+  var portraitCacheKey: String {
+    let identity = [templateID ?? "character", name, gender, vibe, hair, accessory]
+      .map { value in
+        value
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+          .lowercased()
+      }
+      .joined(separator: "-")
+    return "character-\(identity)-cutout-v5"
+  }
 }
 
 struct ChatSession: Identifiable {

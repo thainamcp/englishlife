@@ -44,7 +44,13 @@ struct ChatView: View {
       }
     }
     .sheet(isPresented: $viewModel.showsCompletion) {
-      if let situation { MissionCompleteView(situation: situation, onHome: returnHome) }
+      if let situation {
+        MissionCompleteView(
+          situation: situation,
+          onContinue: { viewModel.showsCompletion = false },
+          onPlayNext: returnHome
+        )
+      }
     }
     .toolbar(.hidden, for: .navigationBar)
     .toolbar(.hidden, for: .tabBar)

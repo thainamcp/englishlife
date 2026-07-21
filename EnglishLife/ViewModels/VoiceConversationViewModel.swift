@@ -309,6 +309,9 @@ private final class OpenAIRealtimeVoiceClient {
   private var currentResponseFinished = false
   private var isPlayingCharacterAudio = false
   private var playbackGateGeneration = 0
+  private var pendingCharacterAudioBuffers = 0
+  private var awaitsCharacterPlaybackCompletion = false
+  private var shouldNotifyCharacterResponseFinished = false
 
   func start(
     character: Character,
@@ -574,8 +577,9 @@ private final class OpenAIRealtimeVoiceClient {
       )
     case "input_audio_buffer.speech_started":
       logger.debug("Realtime turn event=speech_started")
-      beginLearnerTurn()
-      onLearnerSpeechStarted?()
+      if beginLearnerTurn() {
+        onLearnerSpeechStarted?()
+      }
     case "input_audio_buffer.speech_stopped":
       logger.debug("Realtime turn event=speech_stopped; semantic VAD will create response")
     case "input_audio_buffer.committed":
@@ -649,15 +653,29 @@ private final class OpenAIRealtimeVoiceClient {
       guard let baseAddress = source.baseAddress else { return }
       memcpy(channel[0], baseAddress, data.count)
     }
-    playerNode.scheduleBuffer(buffer)
+    let playbackGeneration = playbackGateGeneration
+    pendingCharacterAudioBuffers += 1
+    playerNode.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+      DispatchQueue.main.async {
+        self?.finishCharacterAudioBuffer(playbackGeneration: playbackGeneration)
+      }
+    }
     if !playerNode.isPlaying { playerNode.play() }
   }
 
-  private func beginLearnerTurn() {
+  private func beginLearnerTurn() -> Bool {
+    // The app does not stream input while the character is speaking. Ignore a
+    // VAD event in that period as well, so a tail of loudspeaker playback cannot
+    // be labelled as a learner transcript or shown in the YOU bubble.
+    guard !isPlayingCharacterAudio else {
+      logger.notice("Ignoring VAD turn detected during character playback")
+      return false
+    }
     hasDetectedLearnerSpeech = true
     hasVerifiedLearnerTranscript = false
     acceptsCurrentResponse = false
     didEmitCharacterOutput = false
+    return true
   }
 
   private func verifyLearnerTranscript() {
@@ -686,7 +704,7 @@ private final class OpenAIRealtimeVoiceClient {
     guard currentResponseFinished, acceptsCurrentResponse else {
       return
     }
-    if didEmitCharacterOutput { onCharacterResponseFinished?() }
+    shouldNotifyCharacterResponseFinished = didEmitCharacterOutput
     finishCurrentResponse()
   }
 
@@ -698,13 +716,32 @@ private final class OpenAIRealtimeVoiceClient {
     didEmitCharacterOutput = false
     currentResponseFinished = false
 
-    // Let the final PCM buffers leave the speaker before reopening microphone input.
-    // This prevents the tail of the character's sentence becoming the next VAD turn.
+    // Keep microphone input closed until every scheduled PCM buffer has actually
+    // played. A timer here can reopen too early on a long reply and causes the
+    // character's own words to appear in the learner bubble through echo.
     guard isPlayingCharacterAudio else { return }
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-      guard let self, self.playbackGateGeneration == generation else { return }
-      self.isPlayingCharacterAudio = false
+    awaitsCharacterPlaybackCompletion = true
+    finishCharacterPlaybackIfNeeded(playbackGeneration: generation)
+  }
+
+  private func finishCharacterAudioBuffer(playbackGeneration: Int) {
+    guard playbackGeneration == playbackGateGeneration else { return }
+    pendingCharacterAudioBuffers = max(0, pendingCharacterAudioBuffers - 1)
+    finishCharacterPlaybackIfNeeded(playbackGeneration: playbackGeneration)
+  }
+
+  private func finishCharacterPlaybackIfNeeded(playbackGeneration: Int) {
+    guard playbackGeneration == playbackGateGeneration,
+      awaitsCharacterPlaybackCompletion,
+      pendingCharacterAudioBuffers == 0
+    else { return }
+
+    awaitsCharacterPlaybackCompletion = false
+    isPlayingCharacterAudio = false
+    if shouldNotifyCharacterResponseFinished {
+      onCharacterResponseFinished?()
     }
+    shouldNotifyCharacterResponseFinished = false
   }
 
   private func resetTurnGate() {
@@ -715,5 +752,8 @@ private final class OpenAIRealtimeVoiceClient {
     didEmitCharacterOutput = false
     currentResponseFinished = false
     isPlayingCharacterAudio = false
+    pendingCharacterAudioBuffers = 0
+    awaitsCharacterPlaybackCompletion = false
+    shouldNotifyCharacterResponseFinished = false
   }
 }

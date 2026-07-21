@@ -142,8 +142,18 @@ final class AppViewModel: ObservableObject {
   }
 
   func presentChat(character: Character, situation: Situation?) {
-    if let situation { startLearning(situation) }
-    activeChatSession = ChatSession(character: character, situation: situation)
+    if let situation {
+      startLearning(situation)
+      // Use the persisted customized profile when a situation reuses a
+      // character. This keeps speaking aligned with the name/gender selected
+      // in setup rather than a transient template fallback.
+      activeChatSession = ChatSession(
+        character: self.character(for: situation) ?? character,
+        situation: situation
+      )
+    } else {
+      activeChatSession = ChatSession(character: character, situation: nil)
+    }
   }
 
   /// Generates and saves the learner's one-time personalized roadmap.

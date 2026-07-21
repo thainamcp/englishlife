@@ -108,13 +108,14 @@ struct UserProfileView: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity)
-                .frame(height: 62)
+                .frame(height: 64)
                 .padding(.horizontal, 8)
                 .background(
-                  ThemeApp.Colors.surface.opacity(0.94), in: RoundedRectangle(cornerRadius: 31)
+                  ThemeApp.Colors.surface.opacity(0.94), in: RoundedRectangle(cornerRadius: 32)
                 )
                 .overlay(
-                  RoundedRectangle(cornerRadius: 31).stroke(ThemeApp.Colors.border, lineWidth: 1.5)
+                  RoundedRectangle(cornerRadius: 32)
+                    .strokeBorder(ThemeApp.Colors.border, lineWidth: 1.5)
                 )
             }
             .buttonStyle(.plain)

@@ -134,13 +134,16 @@ struct VocabularyLibraryView: View {
     }
     .foregroundStyle(ThemeApp.Colors.textPrimary)
     .frame(maxWidth: .infinity)
-    .frame(height: 62)
+    .frame(height: 64)
     .padding(.horizontal, 8)
     .background(
       isSelected ? Color(hex: "#F48B8A") : ThemeApp.Colors.surface,
-      in: RoundedRectangle(cornerRadius: 31)
+      in: RoundedRectangle(cornerRadius: 32)
     )
-    .overlay(RoundedRectangle(cornerRadius: 31).stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+    .overlay(
+      RoundedRectangle(cornerRadius: 32)
+        .strokeBorder(ThemeApp.Colors.border, lineWidth: 1.5)
+    )
   }
 
   private var emptyState: some View {

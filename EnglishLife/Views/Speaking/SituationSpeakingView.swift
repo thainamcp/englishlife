@@ -93,9 +93,13 @@ struct SituationChatView: View {
     }
     .overlay {
       if viewModel.showsCompletion, let situation {
-        MissionCompleteView(situation: situation, onHome: returnHome)
-          .transition(.opacity.combined(with: .scale(scale: 0.96)))
-          .zIndex(10)
+        MissionCompleteView(
+          situation: situation,
+          onContinue: { viewModel.showsCompletion = false },
+          onPlayNext: returnHome
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        .zIndex(10)
       }
     }
     .toolbar(.hidden, for: .navigationBar)
@@ -112,6 +116,11 @@ struct SituationChatView: View {
         app.progress(for: situation) == .available,
         !viewModel.showsCompletion
       else { return }
+
+      // The mission has its own terminal state. End the live microphone session
+      // before presenting completion so Realtime cannot continue listening or
+      // create another character response behind the celebration.
+      voiceViewModel.stop()
       viewModel.complete(situation, using: app)
     }
   }
@@ -426,27 +435,41 @@ private struct LearnerDialogueBubble: View {
   var isPlaceholder = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 3) {
-      Text("YOU")
-        .font(ThemeApp.Fonts.ctaButton(size: 11))
-        .foregroundStyle(ThemeApp.Colors.accent)
-      Text(text)
-        .font(ThemeApp.Fonts.bodyText(size: 14))
-        .foregroundStyle(ThemeApp.Colors.textPrimary)
-        .fixedSize(horizontal: false, vertical: true)
+    VStack(alignment: .leading, spacing: 0) {
+      VStack(alignment: .leading, spacing: 3) {
+        Text("YOU")
+          .font(ThemeApp.Fonts.ctaButton(size: 11))
+          .foregroundStyle(ThemeApp.Colors.accent)
+        Text(text)
+          .font(ThemeApp.Fonts.bodyText(size: 14))
+          .foregroundStyle(ThemeApp.Colors.textPrimary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(12)
+      .background(
+        Color.white.opacity(0.95),
+        in: RoundedRectangle(cornerRadius: ThemeApp.Radius.card)
+      )
+      .overlay(
+        RoundedRectangle(cornerRadius: ThemeApp.Radius.card).stroke(
+          ThemeApp.Colors.accent,
+          lineWidth: 2
+        )
+      )
+
+      CharacterDialogueTail()
+        .fill(Color.white.opacity(0.95))
+        .frame(width: 28, height: 16)
+        .overlay(
+          CharacterDialogueTail()
+            .stroke(ThemeApp.Colors.accent, lineWidth: 2)
+        )
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.trailing, 48)
+        .offset(y: -1)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(12)
-    .background(
-      Color.white.opacity(0.95),
-      in: RoundedRectangle(cornerRadius: ThemeApp.Radius.card)
-    )
-    .overlay(
-      RoundedRectangle(cornerRadius: ThemeApp.Radius.card).stroke(
-        ThemeApp.Colors.accent,
-        lineWidth: 2
-      )
-    )
     .opacity(isPlaceholder ? 0.82 : 1)
   }
 }
@@ -503,22 +526,29 @@ private struct LiveSpeakControl: View {
 
 struct MissionCompleteView: View {
   let situation: Situation
-  let onHome: () -> Void
+  let onContinue: () -> Void
+  let onPlayNext: () -> Void
+
   var body: some View {
-    VStack(spacing: 22) {
+    VStack(spacing: 12) {
       Image(systemName: "checkmark.seal.fill")
-        .font(.system(size: 82, weight: .black))
+        .font(.system(size: 56, weight: .black))
         .foregroundStyle(ThemeApp.Colors.primary)
       Text("Mission Complete! 🎉")
-        .font(ThemeApp.Fonts.gameTitle(size: 30))
+        .font(ThemeApp.Fonts.gameTitle(size: 25))
         .foregroundStyle(ThemeApp.Colors.textPrimary)
       Text("You earned +\(situation.reward) XP and unlocked\nthe next mission.")
-        .font(ThemeApp.Fonts.bodyText(size: 19))
+        .font(ThemeApp.Fonts.bodyText(size: 16))
         .multilineTextAlignment(.center)
         .foregroundStyle(ThemeApp.Colors.textPrimary)
-      GameButton(title: "Continue", action: onHome)
+
+      HStack(spacing: 10) {
+        completionButton(title: "Continue", isPrimary: false, action: onContinue)
+        completionButton(title: "Play next", isPrimary: true, action: onPlayNext)
+      }
     }
-    .padding(32)
+    .padding(24)
+    .frame(height: 280)
     .frame(maxWidth: 560)
     .background(ThemeApp.Colors.surface, in: RoundedRectangle(cornerRadius: 48))
     .overlay(
@@ -526,6 +556,26 @@ struct MissionCompleteView: View {
         .stroke(ThemeApp.Colors.border, lineWidth: 1.5)
     )
     .padding(.horizontal, 18)
+  }
+
+  private func completionButton(
+    title: String,
+    isPrimary: Bool,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Text(title)
+        .font(ThemeApp.Fonts.ctaButton(size: 15))
+        .foregroundStyle(isPrimary ? Color.white : ThemeApp.Colors.textPrimary)
+        .frame(maxWidth: .infinity)
+        .frame(height: 44)
+        .background(
+          isPrimary ? ThemeApp.Colors.primary : Color.white.opacity(0.94),
+          in: Capsule()
+        )
+        .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1.5))
+    }
+    .buttonStyle(.plain)
   }
 }
 struct ChatBubble: View {

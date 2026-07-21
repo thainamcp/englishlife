@@ -2,7 +2,15 @@ import SwiftUI
 
 @MainActor
 final class CharacterSetupViewModel: ObservableObject {
-  @Published var name = "Alex"
+  @Published var name = "Alex" {
+    didSet {
+      let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+      if selectedName?.caseInsensitiveCompare(normalizedName) != .orderedSame {
+        selectedName = nil
+      }
+    }
+  }
+  @Published private(set) var selectedName: String?
   @Published var gender = "Woman"
   @Published var vibe = "Friendly"
   @Published var hair = "Curly"
@@ -18,7 +26,10 @@ final class CharacterSetupViewModel: ObservableObject {
 
   let nameSuggestions = ["Alex", "Jamie", "Taylor", "Riley"]
 
-  func selectName(_ name: String) { self.name = name }
+  func selectName(_ name: String) {
+    selectedName = name
+    self.name = name
+  }
 
   func configure(for situation: Situation) {
     guard templateID != situation.characterID else { return }
@@ -28,6 +39,10 @@ final class CharacterSetupViewModel: ObservableObject {
     vibe = situation.characterVibe
     hair = situation.characterHair
     accessory = situation.characterAccessory
+    selectedName = nameSuggestions.first {
+      $0.caseInsensitiveCompare(name.trimmingCharacters(in: .whitespacesAndNewlines))
+        == .orderedSame
+    }
     hasRevealedAvatar = false
     avatarImageData = nil
     avatarGenerationError = nil
@@ -58,7 +73,7 @@ final class CharacterSetupViewModel: ObservableObject {
 
     // Bump the cache version so existing opaque portraits are regenerated once
     // and then stored as Vision-cutout PNGs.
-    let cacheKey = "character-\(situation.characterID)-cutout-v4"
+    let cacheKey = character(for: situation).portraitCacheKey
     if let cached = cache.imageData(for: cacheKey) {
       avatarImageData = cached
       withAnimation(.spring) { hasRevealedAvatar = true }
