@@ -215,7 +215,6 @@ private final class OpenAIRealtimeVoiceClient {
   private var socket: URLSessionWebSocketTask?
   private var receiveTask: Task<Void, Never>?
   private var isRunning = false
-  private var hasLearnerSpeechInCurrentTurn = false
 
   func start(character: Character, situation: Situation?, learnerName: String) async throws {
     stop()
@@ -239,7 +238,6 @@ private final class OpenAIRealtimeVoiceClient {
     let task = urlSession.webSocketTask(with: request)
     socket = task
     isRunning = true
-    hasLearnerSpeechInCurrentTurn = false
     task.resume()
 
     do {
@@ -247,10 +245,12 @@ private final class OpenAIRealtimeVoiceClient {
       // session configuration before the server opens it produces nw_write's
       // "Socket is not connected" error, so wait for Realtime's first event.
       try await waitForSessionCreated(from: task)
-      try startAudioEngine()
       receiveTask = Task { [weak self] in await self?.receiveLoop(requestID: requestID) }
       try await sendSessionUpdate(
         character: character, situation: situation, learnerName: learnerName)
+      // Start feeding microphone buffers only after the Realtime session has been
+      // configured. Server VAD will commit each user turn and create its response.
+      try startAudioEngine()
       onConnectionStateChanged?(true)
     } catch {
       stop()
@@ -263,7 +263,6 @@ private final class OpenAIRealtimeVoiceClient {
 
   func stop() {
     isRunning = false
-    hasLearnerSpeechInCurrentTurn = false
     receiveTask?.cancel()
     receiveTask = nil
     socket?.cancel(with: .goingAway, reason: nil)
@@ -350,6 +349,7 @@ private final class OpenAIRealtimeVoiceClient {
       "type": "session.update",
       "session": [
         "type": "realtime",
+        "model": OpenAIModel.realtimeVoice,
         "output_modalities": ["audio"],
         "instructions": instructions,
         "audio": [
@@ -438,32 +438,37 @@ private final class OpenAIRealtimeVoiceClient {
     else { return }
 
     switch type {
+    case "session.updated":
+      logger.info(
+        "Realtime session configured feature=\(APIFlow.realtimeVoice.rawValue, privacy: .public) model=\(OpenAIModel.realtimeVoice, privacy: .public)"
+      )
+    case "input_audio_buffer.speech_started":
+      logger.debug("Realtime detected learner speech")
+    case "input_audio_buffer.speech_stopped":
+      logger.debug("Realtime committed learner turn and will create a response")
+    case "response.created":
+      logger.info("Realtime character response started")
     case "response.output_audio.delta", "response.audio.delta":
-      guard hasLearnerSpeechInCurrentTurn else { return }
       onCharacterStartedSpeaking?()
       if let encoded = event["delta"] as? String, let audio = Data(base64Encoded: encoded) {
         schedulePlayback(audio)
       }
     case "response.output_audio_transcript.delta", "response.audio_transcript.delta":
-      guard hasLearnerSpeechInCurrentTurn else { return }
       if let delta = event["delta"] as? String { onCharacterTranscriptDelta?(delta) }
     case "conversation.item.input_audio_transcription.delta":
       if let delta = event["delta"] as? String,
         !delta.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       {
-        hasLearnerSpeechInCurrentTurn = true
         onLearnerTranscriptDelta?(delta)
       }
     case "conversation.item.input_audio_transcription.completed":
       if let transcript = event["transcript"] as? String,
         !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       {
-        hasLearnerSpeechInCurrentTurn = true
         onLearnerTranscriptCompleted?(transcript)
       }
     case "response.done":
       onCharacterResponseFinished?()
-      hasLearnerSpeechInCurrentTurn = false
     case "error":
       let detail = (event["error"] as? [String: Any])?["message"] as? String
       onFailure?(detail ?? "Live voice could not be started.")

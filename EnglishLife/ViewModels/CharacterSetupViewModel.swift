@@ -58,7 +58,7 @@ final class CharacterSetupViewModel: ObservableObject {
 
     // Bump the cache version so existing opaque portraits are regenerated once
     // and then stored as Vision-cutout PNGs.
-    let cacheKey = "character-\(situation.characterID)-cutout-v1"
+    let cacheKey = "character-\(situation.characterID)-cutout-v4"
     if let cached = cache.imageData(for: cacheKey) {
       avatarImageData = cached
       withAnimation(.spring) { hasRevealedAvatar = true }

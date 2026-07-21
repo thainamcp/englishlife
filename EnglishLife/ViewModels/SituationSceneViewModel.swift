@@ -9,6 +9,15 @@ final class SituationSceneViewModel: ObservableObject {
 
   private let imageClient = AvatarGenerationAPIClient()
   private let cache = GeneratedMediaCache.shared
+  private static var backgroundGenerationTasks: [String: Task<Data?, Never>] = [:]
+
+  /// Starts loading the location as soon as the learner selects a node. The
+  /// task is shared with the mission and speaking screens, so the artwork is
+  /// ready before a newly created character enters the scene.
+  func prefetchBackground(for situation: Situation) async {
+    guard situation.locationBackgroundAsset == nil else { return }
+    _ = await backgroundImage(for: situation)
+  }
 
   func prepare(for situation: Situation, character: Character?) async {
     guard !isPreparing else { return }
@@ -16,9 +25,23 @@ final class SituationSceneViewModel: ObservableObject {
     errorMessage = nil
     defer { isPreparing = false }
 
-    characterImageData =
+    let characterCacheKey = "character-\(situation.characterID)-cutout-v4"
+    if let cachedAvatar = cache.imageData(for: characterCacheKey) {
+      characterImageData = cachedAvatar
+    } else if let sourceAvatar =
       character?.avatarImageData
       ?? cache.imageData(for: "character-\(situation.characterID)")
+    {
+      // Characters saved before cutout-v4 may still be opaque. Process them
+      // once more before showing the game scene, then reuse the transparent
+      // PNG for every later encounter.
+      let cutout =
+        AvatarGenerationAPIClient.transparentAvatarPNG(from: sourceAvatar) ?? sourceAvatar
+      characterImageData = cutout
+      cache.save(cutout, for: characterCacheKey)
+    } else {
+      characterImageData = nil
+    }
     if situation.locationBackgroundAsset == nil {
       backgroundImageData = await backgroundImage(for: situation)
     } else {
@@ -34,15 +57,28 @@ final class SituationSceneViewModel: ObservableObject {
   private func backgroundImage(for situation: Situation) async -> Data? {
     let key = "location-\(situation.locationID)"
     if let cached = cache.imageData(for: key) { return cached }
-    do {
-      let generated = try await imageClient.generateLocation(
-        named: situation.locationName,
-        description: situation.locationPrompt
-      )
-      cache.save(generated, for: key)
-      return generated
-    } catch {
-      return nil
+
+    if let existingRequest = Self.backgroundGenerationTasks[key] {
+      return await existingRequest.value
     }
+
+    let imageClient = imageClient
+    let cache = cache
+    let request = Task<Data?, Never> {
+      do {
+        let generated = try await imageClient.generateLocation(
+          named: situation.locationName,
+          description: situation.locationPrompt
+        )
+        cache.save(generated, for: key)
+        return generated
+      } catch {
+        return nil
+      }
+    }
+    Self.backgroundGenerationTasks[key] = request
+    let generatedImage = await request.value
+    Self.backgroundGenerationTasks[key] = nil
+    return generatedImage
   }
 }

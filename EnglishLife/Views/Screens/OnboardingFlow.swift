@@ -155,101 +155,139 @@ struct FillInfoView: View {
   @State private var name = ""
   @State private var level: EnglishLevel = .beginner
   @FocusState private var isNameFocused: Bool
+  @State private var showsStudyPathLoading = false
+
+  var body: some View {
+    Group {
+      if showsStudyPathLoading {
+        StudyPathLoadingView()
+      } else {
+        ZStack {
+          ThemeApp.Colors.canvas.ignoresSafeArea()
+          OnboardingScreenLayout {
+            VStack(alignment: .leading, spacing: 0) {
+              // Fixed spacing: 16pt screen inset + 40pt = 56pt below the status bar.
+              Color.clear.frame(height: 40)
+              VStack(alignment: .leading, spacing: 8) {
+                Text("Before we begin").font(ThemeApp.Fonts.gameTitle(size: 28))
+                  .foregroundStyle(ThemeApp.Colors.textPrimary)
+                Text("Tell us a little about your adventure.")
+                  .font(ThemeApp.Fonts.bodyText(size: 15))
+                  .foregroundStyle(ThemeApp.Colors.textPrimary)
+              }
+              .padding(.bottom, 24)
+              VStack(alignment: .leading, spacing: 16) {
+                Text("Your name").font(ThemeApp.Fonts.ctaButton(size: 18))
+                TextField(
+                  "e.g. Mert",
+                  text: $name,
+                  prompt: Text("e.g. Mert").foregroundStyle(ThemeApp.Colors.textSecondary)
+                )
+                .font(ThemeApp.Fonts.bodyText(size: 15))
+                .foregroundStyle(ThemeApp.Colors.textPrimary)
+                .tint(ThemeApp.Colors.primary)
+                .focused($isNameFocused)
+                .padding(.horizontal, 20)
+                .frame(height: 54)
+                .background(.white, in: Capsule())
+                .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1))
+                Text("English Level").font(ThemeApp.Fonts.ctaButton(size: 18))
+                HStack(spacing: 8) {
+                  ForEach(EnglishLevel.allCases) { item in
+                    Button {
+                      level = item
+                    } label: {
+                      VStack(spacing: 7) {
+                        Text(item.icon).font(ThemeApp.Fonts.bodyText(size: 28))
+                        Text(item.rawValue).font(ThemeApp.Fonts.bodyText(size: 15))
+                          .multilineTextAlignment(.center)
+                      }
+                      .foregroundStyle(level == item ? .white : ThemeApp.Colors.textPrimary)
+                      .frame(maxWidth: .infinity)
+                      .frame(height: 96)
+                      .background(
+                        level == item ? ThemeApp.Colors.primary : .white,
+                        in: RoundedRectangle(cornerRadius: ThemeApp.Radius.card)
+                      )
+                      .overlay(
+                        RoundedRectangle(cornerRadius: ThemeApp.Radius.card).stroke(
+                          ThemeApp.Colors.border,
+                          lineWidth: 1
+                        )
+                      )
+                    }.buttonStyle(.plain)
+                  }
+                }
+              }
+              .padding(.bottom, 16)
+              Spacer(minLength: 0)
+              Button(action: beginStudyPathGeneration) {
+                Text("Get Start")
+                  .font(ThemeApp.Fonts.ctaButton(size: 17))
+                  .foregroundStyle(.white)
+                  .frame(maxWidth: .infinity)
+                  .frame(height: 60)
+                  .background(ThemeApp.Colors.primary, in: Capsule())
+                  .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 2))
+              }
+              .buttonStyle(.plain)
+              .frame(width: 265)
+              .frame(maxWidth: .infinity)
+              .padding(.bottom, 50)
+            }
+            .padding(.top, 16)
+          }
+        }
+      }
+    }
+  }
+
+  private func beginStudyPathGeneration() {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedName.isEmpty else {
+      isNameFocused = true
+      return
+    }
+
+    isNameFocused = false
+    state.learnerName = trimmedName
+    showsStudyPathLoading = true
+
+    Task {
+      await state.createStudyPath(for: level)
+      try? await Task.sleep(for: .milliseconds(450))
+      state.hasCompletedOnboarding = true
+    }
+  }
+}
+
+private struct StudyPathLoadingView: View {
+  @State private var isAnimating = false
 
   var body: some View {
     ZStack {
       ThemeApp.Colors.canvas.ignoresSafeArea()
-      OnboardingScreenLayout {
-        VStack(alignment: .leading, spacing: 0) {
-          // Fixed spacing: 16pt screen inset + 40pt = 56pt below the status bar.
-          Color.clear.frame(height: 40)
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Before we begin").font(ThemeApp.Fonts.gameTitle(size: 28))
-              .foregroundStyle(ThemeApp.Colors.textPrimary)
-            Text("Tell us a little about your adventure.")
-              .font(ThemeApp.Fonts.bodyText(size: 15))
-              .foregroundStyle(ThemeApp.Colors.textPrimary)
-          }
-          .padding(.bottom, 24)
-          VStack(alignment: .leading, spacing: 16) {
-            Text("Your name").font(ThemeApp.Fonts.ctaButton(size: 18))
-            TextField(
-              "e.g. Mert",
-              text: $name,
-              prompt: Text("e.g. Mert").foregroundStyle(ThemeApp.Colors.textSecondary)
-            )
-            .font(ThemeApp.Fonts.bodyText(size: 15))
-            .foregroundStyle(ThemeApp.Colors.textPrimary)
-            .tint(ThemeApp.Colors.primary)
-            .focused($isNameFocused)
-            .padding(.horizontal, 20)
-            .frame(height: 54)
-            .background(.white, in: Capsule())
-            .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 1))
-            Text("English Level").font(ThemeApp.Fonts.ctaButton(size: 18))
-            HStack(spacing: 8) {
-              ForEach(EnglishLevel.allCases) { item in
-                Button {
-                  level = item
-                } label: {
-                  VStack(spacing: 7) {
-                    Text(item.icon).font(ThemeApp.Fonts.bodyText(size: 28))
-                    Text(item.rawValue).font(ThemeApp.Fonts.bodyText(size: 15))
-                      .multilineTextAlignment(.center)
-                  }
-                  .foregroundStyle(level == item ? .white : ThemeApp.Colors.textPrimary)
-                  .frame(maxWidth: .infinity)
-                  .frame(height: 96)
-                  .background(
-                    level == item ? ThemeApp.Colors.primary : .white,
-                    in: RoundedRectangle(cornerRadius: ThemeApp.Radius.card)
-                  )
-                  .overlay(
-                    RoundedRectangle(cornerRadius: ThemeApp.Radius.card).stroke(
-                      ThemeApp.Colors.border,
-                      lineWidth: 1
-                    )
-                  )
-                }.buttonStyle(.plain)
-              }
-            }
-          }
-          .padding(.bottom, 16)
-          Spacer(minLength: 0)
-          Button {
-            let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedName.isEmpty else {
-              isNameFocused = true
-              return
-            }
 
-            Task {
-              state.learnerName = trimmedName
-              await state.createStudyPath(for: level)
-              state.hasCompletedOnboarding = true
-            }
-          } label: {
-            HStack(spacing: 10) {
-              if state.isGeneratingStudyPath {
-                ProgressView().tint(.white)
-              }
-              Text(state.isGeneratingStudyPath ? "Building your study path…" : "Get Start")
-            }
-            .font(ThemeApp.Fonts.ctaButton(size: 17))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 60)
-            .background(ThemeApp.Colors.primary, in: Capsule())
-            .overlay(Capsule().stroke(ThemeApp.Colors.border, lineWidth: 2))
+      VStack(spacing: 10) {
+        Text("Building your study path…")
+          .font(ThemeApp.Fonts.ctaButton(size: 17))
+          .foregroundStyle(ThemeApp.Colors.textPrimary)
+
+        HStack(spacing: 2) {
+          ForEach(0..<12, id: \.self) { index in
+            RoundedRectangle(cornerRadius: 1)
+              .fill(ThemeApp.Colors.border)
+              .frame(width: 7, height: 3)
+              .rotationEffect(.degrees(-35))
+              .opacity(isAnimating ? (index.isMultiple(of: 2) ? 0.35 : 1) : 1)
           }
-          .buttonStyle(.plain)
-          .disabled(state.isGeneratingStudyPath)
-          .opacity(state.isGeneratingStudyPath ? 0.72 : 1)
-          .frame(width: 265)
-          .frame(maxWidth: .infinity)
-          .padding(.bottom, 50)
         }
-        .padding(.top, 16)
+      }
+      .offset(y: 12)
+    }
+    .onAppear {
+      withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
+        isAnimating = true
       }
     }
   }

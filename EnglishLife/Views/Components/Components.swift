@@ -7,6 +7,16 @@ struct AdventureBackground: View {
   }
 }
 
+struct MainTabBackground: View {
+  var body: some View {
+    Image("background")
+      .resizable()
+      .scaledToFill()
+      .clipped()
+      .allowsHitTesting(false)
+  }
+}
+
 struct GameButton: View {
   let title: String
   var icon: String? = nil
