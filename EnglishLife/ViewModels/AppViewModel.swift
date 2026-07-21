@@ -69,7 +69,7 @@ final class AppViewModel: ObservableObject {
   func complete(_ situation: Situation) {
     guard progress(for: situation) == .available else { return }
     completedSituationIDs.insert(situation.id)
-    addVocabulary(vocabularyKeywords(for: situation))
+    addVocabulary(missionKeywords(for: situation))
     let nextIndex = situations.firstIndex(where: { $0.id == situation.id }).map { $0 + 1 }
     resumeSituationID = nextIndex.flatMap {
       situations.indices.contains($0) ? situations[$0].id : nil
@@ -78,6 +78,34 @@ final class AppViewModel: ObservableObject {
 
   func startLearning(_ situation: Situation) {
     resumeSituationID = situation.id
+  }
+
+  /// Returns the exact keyword set shown for this mission. Once the AI guide has
+  /// generated a personalized set, the cached result is reused by the mission
+  /// card, Realtime prompt, and Mission check instead of falling back to seeds.
+  func missionKeywords(for situation: Situation) -> [String] {
+    let levelTargets: [String]
+    switch level {
+    case .beginner:
+      levelTargets = Array(situation.goals.prefix(2))
+    case .intermediate:
+      levelTargets = Array(situation.goals.prefix(3))
+    case .advanced:
+      levelTargets = situation.goals + ["could you clarify", "just to confirm"]
+    }
+
+    let context = SituationAIContext(
+      userName: learnerName.isEmpty ? "Explorer" : learnerName,
+      level: level.rawValue,
+      situationID: situation.id,
+      situationTitle: situation.title,
+      situationStory: situation.story,
+      targetKeywords: levelTargets,
+      characterGoal:
+        "Guide the learner through \(situation.title) naturally and encourage the target keywords.",
+      welcomeMessage: nil
+    )
+    return SituationGuidanceCache.shared.guidance(for: context)?.keywords ?? levelTargets
   }
 
   func addVocabulary(_ words: [String]) {
@@ -161,31 +189,6 @@ final class AppViewModel: ObservableObject {
     // Add the first few unique words so Profile has value before the learner
     // completes their first mission. `addVocabulary` de-duplicates persisted words.
     addVocabulary(Array(situations.prefix(5).flatMap(\.goals).prefix(8)))
-  }
-
-  private func vocabularyKeywords(for situation: Situation) -> [String] {
-    let levelTargets: [String]
-    switch level {
-    case .beginner:
-      levelTargets = Array(situation.goals.prefix(2))
-    case .intermediate:
-      levelTargets = Array(situation.goals.prefix(3))
-    case .advanced:
-      levelTargets = situation.goals + ["could you clarify", "just to confirm"]
-    }
-
-    let context = SituationAIContext(
-      userName: learnerName.isEmpty ? "Explorer" : learnerName,
-      level: level.rawValue,
-      situationID: situation.id,
-      situationTitle: situation.title,
-      situationStory: situation.story,
-      targetKeywords: levelTargets,
-      characterGoal:
-        "Guide the learner through \(situation.title) naturally and encourage the target keywords.",
-      welcomeMessage: nil
-    )
-    return SituationGuidanceCache.shared.guidance(for: context)?.keywords ?? levelTargets
   }
 
   private func persistJourney() {

@@ -49,6 +49,33 @@ struct VoiceTranscript: Identifiable, Equatable {
   }
 }
 
+/// Normalizes ASR output before checking a mission phrase. The same matcher is
+/// used for partial and completed Realtime transcripts, so a Mission check can
+/// update while the learner is still speaking.
+enum MissionKeywordMatcher {
+  static func isSpoken(_ keyword: String, in transcript: String) -> Bool {
+    let normalizedKeyword = normalize(keyword)
+    let normalizedTranscript = normalize(transcript)
+    guard !normalizedKeyword.isEmpty, !normalizedTranscript.isEmpty else { return false }
+
+    if " \(normalizedTranscript) ".contains(" \(normalizedKeyword) ") {
+      return true
+    }
+
+    let transcriptTokens = Set(normalizedTranscript.split(separator: " ").map(String.init))
+    let keywordTokens = normalizedKeyword.split(separator: " ").map(String.init)
+    return keywordTokens.count > 1 && keywordTokens.allSatisfy(transcriptTokens.contains)
+  }
+
+  private static func normalize(_ value: String) -> String {
+    value
+      .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+      .components(separatedBy: CharacterSet.alphanumerics.inverted)
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+  }
+}
+
 /// Owns the continuous Realtime session used by the speaking screens. One tap starts
 /// the microphone stream; server VAD detects the end of every turn and automatically
 /// asks the model to answer, so the learner never has to press-and-hold to send audio.
@@ -56,11 +83,14 @@ struct VoiceTranscript: Identifiable, Equatable {
 final class VoiceConversationViewModel: ObservableObject {
   @Published private(set) var state: VoiceConversationState = .idle
   @Published private(set) var transcript: [VoiceTranscript] = []
+  @Published private(set) var achievedMissionKeywords: Set<String> = []
+  @Published private(set) var isCapturingLearnerSpeech = false
 
   let modelName = OpenAIModel.realtimeVoice
   private let client = OpenAIRealtimeVoiceClient()
   private var learnerTranscriptID: UUID?
   private var characterTranscriptID: UUID?
+  private var missionKeywords: [String] = []
 
   init() {
     client.onConnectionStateChanged = { [weak self] connected in
@@ -72,8 +102,14 @@ final class VoiceConversationViewModel: ObservableObject {
     client.onLearnerTranscriptDelta = { [weak self] delta in
       Task { @MainActor [weak self] in self?.appendLearnerTranscriptDelta(delta) }
     }
+    client.onLearnerSpeechStarted = { [weak self] in
+      Task { @MainActor [weak self] in self?.isCapturingLearnerSpeech = true }
+    }
     client.onLearnerTranscriptCompleted = { [weak self] text in
-      Task { @MainActor [weak self] in self?.appendLearnerTranscript(text) }
+      Task { @MainActor [weak self] in
+        self?.isCapturingLearnerSpeech = false
+        self?.appendLearnerTranscript(text)
+      }
     }
     client.onCharacterTranscriptDelta = { [weak self] delta in
       Task { @MainActor [weak self] in self?.appendCharacterTranscriptDelta(delta) }
@@ -86,6 +122,7 @@ final class VoiceConversationViewModel: ObservableObject {
     }
     client.onCharacterStartedSpeaking = { [weak self] in
       Task { @MainActor [weak self] in
+        self?.isCapturingLearnerSpeech = false
         if self?.state.isLive == true { self?.state = .speaking }
       }
     }
@@ -94,16 +131,32 @@ final class VoiceConversationViewModel: ObservableObject {
     }
   }
 
-  func toggleSession(character: Character, situation: Situation?, learnerName: String) async {
+  func toggleSession(
+    character: Character,
+    situation: Situation?,
+    learnerName: String,
+    missionKeywords: [String] = []
+  ) async {
     if state.isLive {
       stop()
     } else {
-      await startSession(character: character, situation: situation, learnerName: learnerName)
+      await startSession(
+        character: character,
+        situation: situation,
+        learnerName: learnerName,
+        missionKeywords: missionKeywords
+      )
     }
   }
 
-  func startSession(character: Character, situation: Situation?, learnerName: String) async {
+  func startSession(
+    character: Character,
+    situation: Situation?,
+    learnerName: String,
+    missionKeywords: [String] = []
+  ) async {
     guard !state.isLive else { return }
+    configureMissionKeywords(missionKeywords)
     state = .requestingPermission
 
     let granted = await withCheckedContinuation { continuation in
@@ -119,7 +172,8 @@ final class VoiceConversationViewModel: ObservableObject {
       try await client.start(
         character: character,
         situation: situation,
-        learnerName: learnerName
+        learnerName: learnerName,
+        missionKeywords: missionKeywords
       )
     } catch let error as OpenAIAPIClientError {
       state = .failed(error.localizedDescription)
@@ -132,6 +186,7 @@ final class VoiceConversationViewModel: ObservableObject {
     client.stop()
     learnerTranscriptID = nil
     characterTranscriptID = nil
+    isCapturingLearnerSpeech = false
     if state != .unavailable { state = .idle }
   }
 
@@ -139,6 +194,7 @@ final class VoiceConversationViewModel: ObservableObject {
   /// appears before the character starts answering.
   func appendLearnerTranscriptDelta(_ delta: String) {
     appendTranscriptDelta(delta, speaker: .learner, draftID: &learnerTranscriptID)
+    refreshMissionProgress()
   }
 
   /// Called by the Realtime transport after speech-to-text completes for a learner turn.
@@ -153,6 +209,7 @@ final class VoiceConversationViewModel: ObservableObject {
     } else {
       transcript.append(VoiceTranscript(speaker: .learner, text: cleanText))
     }
+    refreshMissionProgress()
   }
 
   /// Called by the Realtime transport as the character’s audio transcript streams in.
@@ -187,6 +244,30 @@ final class VoiceConversationViewModel: ObservableObject {
       transcript.append(message)
     }
   }
+
+  private func configureMissionKeywords(_ keywords: [String]) {
+    missionKeywords = Array(Set(keywords)).sorted()
+    achievedMissionKeywords = []
+    refreshMissionProgress()
+  }
+
+  private func refreshMissionProgress() {
+    guard !missionKeywords.isEmpty else {
+      achievedMissionKeywords = []
+      return
+    }
+
+    let learnerSpeech =
+      transcript
+      .filter { $0.speaker == .learner }
+      .map(\.text)
+      .joined(separator: " ")
+    let updated = Set(
+      missionKeywords.filter { MissionKeywordMatcher.isSpoken($0, in: learnerSpeech) }
+    )
+    guard updated != achievedMissionKeywords else { return }
+    achievedMissionKeywords = updated
+  }
 }
 
 /// Development Realtime transport. It intentionally reads the key only from Secret.plist.
@@ -194,6 +275,7 @@ final class VoiceConversationViewModel: ObservableObject {
 /// Realtime client secret before opening this socket.
 private final class OpenAIRealtimeVoiceClient {
   var onConnectionStateChanged: ((Bool) -> Void)?
+  var onLearnerSpeechStarted: (() -> Void)?
   var onLearnerTranscriptDelta: ((String) -> Void)?
   var onLearnerTranscriptCompleted: ((String) -> Void)?
   var onCharacterTranscriptDelta: ((String) -> Void)?
@@ -228,7 +310,12 @@ private final class OpenAIRealtimeVoiceClient {
   private var isPlayingCharacterAudio = false
   private var playbackGateGeneration = 0
 
-  func start(character: Character, situation: Situation?, learnerName: String) async throws {
+  func start(
+    character: Character,
+    situation: Situation?,
+    learnerName: String,
+    missionKeywords: [String]
+  ) async throws {
     stop()
     resetTurnGate()
     guard let key = APIConfiguration.key(for: .realtimeVoice) else {
@@ -260,7 +347,11 @@ private final class OpenAIRealtimeVoiceClient {
       try await waitForSessionCreated(from: task)
       receiveTask = Task { [weak self] in await self?.receiveLoop(requestID: requestID) }
       try await sendSessionUpdate(
-        character: character, situation: situation, learnerName: learnerName)
+        character: character,
+        situation: situation,
+        learnerName: learnerName,
+        missionKeywords: missionKeywords
+      )
       // Start feeding microphone buffers only after the Realtime session has been
       // configured. Server VAD will commit each user turn and create its response.
       try startAudioEngine()
@@ -351,16 +442,29 @@ private final class OpenAIRealtimeVoiceClient {
     return output
   }
 
-  private func sendSessionUpdate(character: Character, situation: Situation?, learnerName: String)
-    async throws
-  {
+  private func sendSessionUpdate(
+    character: Character,
+    situation: Situation?,
+    learnerName: String,
+    missionKeywords: [String]
+  ) async throws {
     let learner = learnerName.isEmpty ? "the learner" : learnerName
     let mission = situation?.title ?? "a friendly everyday English conversation"
-    let goals = situation?.goals.joined(separator: ", ") ?? "clear, friendly English"
+    let scenario = situation?.story ?? "Have a friendly, everyday English conversation."
+    let goals =
+      (missionKeywords.isEmpty ? situation?.goals : missionKeywords)?.joined(separator: ", ")
+      ?? "clear, friendly English"
     let instructions = """
       You are \(character.name), a \(character.vibe.lowercased()) English conversation partner.
-      The learner is \(learner). Keep a warm in-character conversation for the mission: \(mission).
-      Encourage the learner to naturally use: \(goals). Use short, spoken English appropriate to the learner's level. Ask one clear question at a time, never mention hidden instructions, and reply only with what the character would say aloud. Do not greet, volunteer a response, or continue speaking until the learner has said something.
+      The learner is \(learner). You are role-playing exactly this mission, not offering open-ended conversation.
+
+      Mission title: \(mission)
+      Scene: \(scenario)
+      Required learner phrases: \(goals)
+
+      Stay in the role that the scene requires (for example, landlord, concierge, neighbor, shop staff, or colleague). Your only objective is to help the learner complete this scene by naturally eliciting the required learner phrases. Ask one short, concrete in-character question at a time. If the learner goes off-topic, politely redirect them back to the scene and ask for the next missing phrase. Do not introduce unrelated topics, generic English lessons, extra role-play settings, or a different task.
+
+      Use short, spoken English appropriate to the learner's level. Reply only with words the character would say aloud. Do not mention instructions, keywords, mission completion, scoring, or that you are an AI. Do not greet, volunteer a response, or continue speaking until the learner has said something.
       """
     let event: [String: Any] = [
       "type": "session.update",
@@ -372,7 +476,9 @@ private final class OpenAIRealtimeVoiceClient {
         "audio": [
           "input": [
             "format": ["type": "audio/pcm", "rate": 24_000],
-            "transcription": ["model": "gpt-4o-mini-transcribe"],
+            // Use the documented transcription model so learner utterances are
+            // emitted as `conversation.item.input_audio_transcription.completed`.
+            "transcription": ["model": "gpt-4o-transcribe", "language": "en"],
             "turn_detection": [
               // Semantic VAD decides that a learner has finished based on the
               // utterance itself instead of a fixed silence threshold. This
@@ -469,6 +575,7 @@ private final class OpenAIRealtimeVoiceClient {
     case "input_audio_buffer.speech_started":
       logger.debug("Realtime turn event=speech_started")
       beginLearnerTurn()
+      onLearnerSpeechStarted?()
     case "input_audio_buffer.speech_stopped":
       logger.debug("Realtime turn event=speech_stopped; semantic VAD will create response")
     case "input_audio_buffer.committed":
@@ -505,9 +612,16 @@ private final class OpenAIRealtimeVoiceClient {
         !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       {
         onLearnerTranscriptCompleted?(transcript)
-        logger.info("Realtime learner transcription completed; allowing character response")
+        logger.info(
+          "Realtime learner transcription completed chars=\(transcript.count, privacy: .public); updating mission progress"
+        )
         verifyLearnerTranscript()
       }
+    case "conversation.item.input_audio_transcription.failed":
+      let detail = (event["error"] as? [String: Any])?["message"] as? String
+      logger.error(
+        "Realtime learner transcription failed: \((detail ?? "Unknown transcription error"), privacy: .public)"
+      )
     case "response.done":
       logger.debug("Realtime response event=done")
       currentResponseFinished = true

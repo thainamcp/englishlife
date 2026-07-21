@@ -20,7 +20,8 @@ struct ChatView: View {
             await voiceViewModel.toggleSession(
               character: character,
               situation: situation,
-              learnerName: state.learnerName
+              learnerName: state.learnerName,
+              missionKeywords: situation.map { state.missionKeywords(for: $0) } ?? []
             )
           }
         }
@@ -36,7 +37,10 @@ struct ChatView: View {
     .sheet(isPresented: $viewModel.showsRequirements) {
       if let situation {
         RequirementView(
-          situation: situation, onComplete: { viewModel.complete(situation, using: state) })
+          situation: situation,
+          keywords: state.missionKeywords(for: situation),
+          onComplete: { viewModel.complete(situation, using: state) }
+        )
       }
     }
     .sheet(isPresented: $viewModel.showsCompletion) {

@@ -35,20 +35,32 @@ struct SituationChatView: View {
 
         Spacer(minLength: 0)
 
-        if let latestLearnerMessage {
-          LearnerDialogueBubble(message: latestLearnerMessage)
-            .padding(.horizontal, 28)
-            .padding(.bottom, 156)
-        }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+      if let latestLearnerMessage {
+        LearnerDialogueBubble(text: latestLearnerMessage.text)
+          .frame(maxWidth: .infinity, alignment: .bottom)
+          .padding(.horizontal, 28)
+          .padding(.bottom, 192)
+          .transition(.opacity.combined(with: .move(edge: .bottom)))
+          .zIndex(2)
+      } else if voiceViewModel.isCapturingLearnerSpeech {
+        LearnerDialogueBubble(text: "Listening…", isPlaceholder: true)
+          .frame(maxWidth: .infinity, alignment: .bottom)
+          .padding(.horizontal, 28)
+          .padding(.bottom, 192)
+          .transition(.opacity.combined(with: .move(edge: .bottom)))
+          .zIndex(2)
+      }
 
       SceneMicrophoneControl(state: voiceViewModel.state) {
         Task {
           await voiceViewModel.toggleSession(
             character: character,
             situation: situation,
-            learnerName: app.learnerName
+            learnerName: app.learnerName,
+            missionKeywords: missionKeywords
           )
         }
       }
@@ -73,13 +85,18 @@ struct SituationChatView: View {
       if let situation {
         RequirementView(
           situation: situation,
+          keywords: missionKeywords,
           achievedKeywords: achievedKeywords,
           onComplete: { viewModel.complete(situation, using: app) }
         )
       }
     }
-    .sheet(isPresented: $viewModel.showsCompletion) {
-      if let situation { MissionCompleteView(situation: situation, onHome: returnHome) }
+    .overlay {
+      if viewModel.showsCompletion, let situation {
+        MissionCompleteView(situation: situation, onHome: returnHome)
+          .transition(.opacity.combined(with: .scale(scale: 0.96)))
+          .zIndex(10)
+      }
     }
     .toolbar(.hidden, for: .navigationBar)
     .toolbar(.hidden, for: .tabBar)
@@ -87,6 +104,15 @@ struct SituationChatView: View {
       if let situation {
         await sceneViewModel.prepare(for: situation, character: character)
       }
+    }
+    .onChange(of: achievedKeywords) { _, newValue in
+      guard let situation,
+        !missionKeywords.isEmpty,
+        missionKeywords.allSatisfy(newValue.contains),
+        app.progress(for: situation) == .available,
+        !viewModel.showsCompletion
+      else { return }
+      viewModel.complete(situation, using: app)
     }
   }
 
@@ -160,17 +186,12 @@ struct SituationChatView: View {
   }
 
   private var achievedKeywords: Set<String> {
+    voiceViewModel.achievedMissionKeywords
+  }
+
+  private var missionKeywords: [String] {
     guard let situation else { return [] }
-    let learnerSpeech = voiceViewModel.transcript
-      .filter { $0.speaker == .learner }
-      .map(\.text)
-      .joined(separator: " ")
-      .lowercased()
-    return Set(
-      situation.goals.filter { keyword in
-        learnerSpeech.contains(keyword.lowercased())
-      }
-    )
+    return app.missionKeywords(for: situation)
   }
 }
 
@@ -401,14 +422,15 @@ private struct LiveDialoguePanel: View {
 }
 
 private struct LearnerDialogueBubble: View {
-  let message: VoiceTranscript
+  let text: String
+  var isPlaceholder = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 3) {
       Text("YOU")
         .font(ThemeApp.Fonts.ctaButton(size: 11))
         .foregroundStyle(ThemeApp.Colors.accent)
-      Text(message.text)
+      Text(text)
         .font(ThemeApp.Fonts.bodyText(size: 14))
         .foregroundStyle(ThemeApp.Colors.textPrimary)
         .fixedSize(horizontal: false, vertical: true)
@@ -425,6 +447,7 @@ private struct LearnerDialogueBubble: View {
         lineWidth: 2
       )
     )
+    .opacity(isPlaceholder ? 0.82 : 1)
   }
 }
 
@@ -482,30 +505,27 @@ struct MissionCompleteView: View {
   let situation: Situation
   let onHome: () -> Void
   var body: some View {
-    ZStack {
-      AdventureBackground()
-      VStack(spacing: 22) {
-        Spacer()
-        Image(systemName: "checkmark.seal.fill").font(.system(size: 82, weight: .black))
-          .foregroundStyle(ThemeApp.Colors.roadmapLine)
-        Text("Mission complete!").font(ThemeApp.Fonts.gameTitle(size: 32)).foregroundStyle(
-          ThemeApp.Colors.textPrimary)
-        Text("You completed \(situation.title) and earned +\(situation.reward) EXP.").font(
-          ThemeApp.Fonts.bodyText()
-        ).multilineTextAlignment(.center).foregroundStyle(ThemeApp.Colors.textSecondary)
-        GlassCard {
-          VStack(spacing: 8) {
-            Label("New situation unlocked", systemImage: "lock.open.fill").font(
-              ThemeApp.Fonts.ctaButton(size: 15)
-            ).foregroundStyle(ThemeApp.Colors.roadmapLine)
-            Text(situation.unlock).font(ThemeApp.Fonts.gameTitle(size: 22)).foregroundStyle(
-              ThemeApp.Colors.textPrimary)
-          }
-        }
-        GameButton(title: "Back to map", icon: "map.fill", action: onHome)
-        Spacer()
-      }.padding(24)
+    VStack(spacing: 22) {
+      Image(systemName: "checkmark.seal.fill")
+        .font(.system(size: 82, weight: .black))
+        .foregroundStyle(ThemeApp.Colors.primary)
+      Text("Mission Complete! 🎉")
+        .font(ThemeApp.Fonts.gameTitle(size: 30))
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+      Text("You earned +\(situation.reward) XP and unlocked\nthe next mission.")
+        .font(ThemeApp.Fonts.bodyText(size: 19))
+        .multilineTextAlignment(.center)
+        .foregroundStyle(ThemeApp.Colors.textPrimary)
+      GameButton(title: "Continue", action: onHome)
     }
+    .padding(32)
+    .frame(maxWidth: 560)
+    .background(ThemeApp.Colors.surface, in: RoundedRectangle(cornerRadius: 48))
+    .overlay(
+      RoundedRectangle(cornerRadius: 48)
+        .stroke(ThemeApp.Colors.border, lineWidth: 1.5)
+    )
+    .padding(.horizontal, 18)
   }
 }
 struct ChatBubble: View {
@@ -524,6 +544,7 @@ struct ChatBubble: View {
 
 struct RequirementView: View {
   let situation: Situation
+  var keywords: [String]
   var achievedKeywords: Set<String> = []
   let onComplete: () -> Void
   @EnvironmentObject private var state: AppViewModel
@@ -540,7 +561,7 @@ struct RequirementView: View {
           .fixedSize(horizontal: false, vertical: true)
 
         VStack(alignment: .leading, spacing: 10) {
-          ForEach(situation.goals, id: \.self) { keyword in
+          ForEach(keywords, id: \.self) { keyword in
             RequirementKeywordRow(keyword: keyword, isComplete: isKeywordComplete(keyword))
           }
         }
@@ -605,7 +626,7 @@ struct RequirementView: View {
 
   private var allKeywordsComplete: Bool {
     state.progress(for: situation) == .completed
-      || situation.goals.allSatisfy(isKeywordComplete)
+      || keywords.allSatisfy(isKeywordComplete)
   }
 
   private func isKeywordComplete(_ keyword: String) -> Bool {
